@@ -22,6 +22,7 @@ export const keepAwakeSettings = defineSettings({
   schema: z.object({
     mode: z.enum(KEEP_AWAKE_MODES).default("auto"),
     keepDisplayAwake: z.boolean().default(false),
+    customCommand: z.string().default(""),
   }),
   migrate: migrateKeepAwakeSettings,
 });
@@ -31,6 +32,7 @@ export type KeepAwakeSettings = z.output<typeof keepAwakeSettings.schema>;
 export const DEFAULT_SETTINGS: KeepAwakeSettings = {
   mode: "auto",
   keepDisplayAwake: false,
+  customCommand: "",
 };
 
 export function shouldHold(mode: KeepAwakeMode, agentRunning: boolean): boolean {

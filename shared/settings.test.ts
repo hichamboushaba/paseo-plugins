@@ -53,6 +53,7 @@ test("a migrated v1 document satisfies the current schema", () => {
   assert.deepEqual(keepAwakeSettings.schema.parse(migrated), {
     mode: "off",
     keepDisplayAwake: true,
+    customCommand: "",
   });
 });
 

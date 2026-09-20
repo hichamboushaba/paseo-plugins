@@ -23,6 +23,7 @@ export default function contribute(server: PluginServerContext) {
   const apply = (): void => {
     suppressor.sync(shouldHold(settingsValues.mode, tracker.holding), {
       keepDisplayAwake: settingsValues.keepDisplayAwake,
+      customCommand: settingsValues.customCommand,
     });
   };
 
@@ -117,7 +118,11 @@ export default function contribute(server: PluginServerContext) {
       supported: suppressor.supported,
       holding: suppressor.active,
       heldBy: tracker.ids(),
-      command: suppressor.describe({ keepDisplayAwake: settingsValues.keepDisplayAwake }),
+      command: suppressor.describe({
+        keepDisplayAwake: settingsValues.keepDisplayAwake,
+        customCommand: settingsValues.customCommand,
+      }),
+      commandError: suppressor.commandError,
     };
   });
 

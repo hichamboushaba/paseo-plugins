@@ -10,5 +10,6 @@ export const statusRpc = defineRpc({
     holding: z.boolean(),
     heldBy: z.array(z.string()),
     command: z.string().nullable(),
+    commandError: z.string().nullable(),
   }),
 });

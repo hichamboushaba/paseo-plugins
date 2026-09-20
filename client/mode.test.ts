@@ -33,7 +33,7 @@ const ready: ReadResult = {
 test("readKeepAwake returns parsed values and the revision", async () => {
   const { rpc } = fakeRpc(ready);
   assert.deepEqual(await readKeepAwake(rpc), {
-    values: { mode: "auto", keepDisplayAwake: false },
+    values: { mode: "auto", keepDisplayAwake: false, customCommand: "" },
     revision: "r1",
   });
 });
@@ -53,12 +53,13 @@ test("setKeepAwakeMode writes the new mode against the read revision", async () 
   assert.deepEqual(await setKeepAwakeMode(rpc, "always"), {
     mode: "always",
     keepDisplayAwake: false,
+    customCommand: "",
   });
   assert.equal(calls.length, 2);
   assert.equal(calls[1]?.name, "settings.keep-awake.write");
   assert.deepEqual(calls[1]?.input, {
     revision: "r1",
-    values: { mode: "always", keepDisplayAwake: false },
+    values: { mode: "always", keepDisplayAwake: false, customCommand: "" },
   });
 });
 
@@ -68,12 +69,20 @@ test("setKeepAwakeMode preserves keepDisplayAwake", async () => {
     revision: "r1",
     values: { mode: "auto", keepDisplayAwake: true },
   });
-  assert.deepEqual(await setKeepAwakeMode(rpc, "off"), { mode: "off", keepDisplayAwake: true });
+  assert.deepEqual(await setKeepAwakeMode(rpc, "off"), {
+    mode: "off",
+    keepDisplayAwake: true,
+    customCommand: "",
+  });
 });
 
 test("setKeepAwakeMode does not write when the mode is already set", async () => {
   const { rpc, calls } = fakeRpc(ready);
-  assert.deepEqual(await setKeepAwakeMode(rpc, "auto"), { mode: "auto", keepDisplayAwake: false });
+  assert.deepEqual(await setKeepAwakeMode(rpc, "auto"), {
+    mode: "auto",
+    keepDisplayAwake: false,
+    customCommand: "",
+  });
   assert.equal(calls.length, 1);
 });
 

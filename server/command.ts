@@ -1,5 +1,8 @@
+import { substitutePid, tokenizeCommandLine } from "../shared/command-line.js";
+
 export interface SuppressionOptions {
   keepDisplayAwake: boolean;
+  customCommand: string;
 }
 
 export interface SuppressionCommand {
@@ -19,6 +22,10 @@ export function suppressionCommand(
   options: SuppressionOptions,
   watchPid: number,
 ): SuppressionCommand | null {
+  const custom = customSuppressionCommand(options.customCommand, watchPid);
+  if (custom !== undefined) {
+    return custom;
+  }
   switch (platform) {
     case "darwin": {
       const args = ["-i", "-m"];
@@ -49,6 +56,31 @@ export function suppressionCommand(
     default:
       return null;
   }
+}
+
+// A blank command means "no override" and falls through to the platform switch above
+// (signalled by `undefined`). A non-blank command that fails to tokenise is a user error, not
+// a reason to silently fall back to the built-in one (signalled by `null`, same as an
+// unsupported platform).
+function customSuppressionCommand(
+  customCommand: string,
+  watchPid: number,
+): SuppressionCommand | null | undefined {
+  const tokenized = tokenizeCommandLine(customCommand);
+  if ("error" in tokenized) {
+    return null;
+  }
+  if (tokenized.tokens.length === 0) {
+    return undefined;
+  }
+  const [command, ...args] = substitutePid(tokenized.tokens, watchPid);
+  if (command === "") {
+    // A quoted empty first token (e.g. `"" -w {pid}`) tokenises but isn't spawnable — Node's
+    // spawn() throws synchronously for an empty command, so treat it the same as `null` rather
+    // than let that exception escape sync()/apply() and crash the plugin.
+    return null;
+  }
+  return { command, args };
 }
 
 function windowsScript(options: SuppressionOptions, watchPid: number): string {

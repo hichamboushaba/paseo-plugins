@@ -16,6 +16,7 @@ export function KeepAwakeModePopover({ theme, close }: PluginButtonContentProps)
   const settings = useSettings(keepAwakeSettings);
   const ready = settings.status === "ready";
   const values = ready ? settings.values : null;
+  const hasCustomCommand = (values?.customCommand ?? "") !== "";
 
   const styles = useMemo(
     () => ({
@@ -92,9 +93,10 @@ export function KeepAwakeModePopover({ theme, close }: PluginButtonContentProps)
       <View style={styles.divider} />
       <SettingsSwitch
         label="Keep the display on too"
+        hint={hasCustomCommand ? "Disabled — a custom command is set." : undefined}
         value={values?.keepDisplayAwake ?? false}
         onValueChange={(next) => void write({ keepDisplayAwake: next })}
-        disabled={!ready || settings.saving}
+        disabled={!ready || settings.saving || hasCustomCommand}
       />
       {settings.saveError === null ? null : (
         <Text style={styles.error}>{settings.saveError}</Text>
