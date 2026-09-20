@@ -36,8 +36,39 @@ export default function contribute(server: PluginServerContext) {
     }
   });
 
-  server.on("agent.turn_started", (event, context) => {
+  async function reconcile(): Promise<void> {
+    if (paseo === null) {
+      return;
+    }
+    const running = await listRunningAgentIds(paseo);
+    if (running === null) {
+      return;
+    }
+    const { added, dropped } = tracker.reconcile(running);
+    if (added.length === 0 && dropped.length === 0) {
+      return;
+    }
+    if (added.length > 0) {
+      console.log(`[keep-awake] acquired missed holds: ${added.join(", ")}`);
+    }
+    if (dropped.length > 0) {
+      console.log(`[keep-awake] released stale holds: ${dropped.join(", ")}`);
+    }
+    apply();
+  }
+
+  const capture = (context: { paseo: PaseoApi }): void => {
+    const isFirst = paseo === null;
     paseo = context.paseo;
+    if (isFirst) {
+      void reconcile().catch((error: unknown) => {
+        console.error("[keep-awake] first reconcile failed:", error);
+      });
+    }
+  };
+
+  server.on("agent.turn_started", (event, context) => {
+    capture(context);
     tracker.add(event.agent.id);
     apply();
     console.log(
@@ -47,7 +78,7 @@ export default function contribute(server: PluginServerContext) {
   });
 
   server.on("agent.turn_ended", (event, context) => {
-    paseo = context.paseo;
+    capture(context);
     tracker.remove(event.agent.id);
     apply();
     console.log(
@@ -56,20 +87,10 @@ export default function contribute(server: PluginServerContext) {
     );
   });
 
-  const reconcile = async (): Promise<void> => {
-    if (!tracker.holding || paseo === null) {
-      return;
-    }
-    const running = await listRunningAgentIds(paseo);
-    if (running === null) {
-      return;
-    }
-    const dropped = tracker.reconcile(running);
-    if (dropped.length > 0) {
-      console.log(`[keep-awake] released stale holds: ${dropped.join(", ")}`);
-      apply();
-    }
-  };
+  server.on("agent.created", (_event, context) => capture(context));
+  server.on("agent.archived", (_event, context) => capture(context));
+  server.on("workspace.created", (_event, context) => capture(context));
+  server.on("workspace.archived", (_event, context) => capture(context));
 
   const timer = setInterval(() => {
     void reconcile().catch((error: unknown) => {
@@ -77,13 +98,16 @@ export default function contribute(server: PluginServerContext) {
     });
   }, RECONCILE_INTERVAL_MS);
 
-  server.handle(statusRpc, () => ({
-    platform: process.platform,
-    supported: suppressor.supported,
-    holding: suppressor.active,
-    heldBy: tracker.ids(),
-    command: suppressor.describe({ keepDisplayAwake: settingsValues.keepDisplayAwake }),
-  }));
+  server.handle(statusRpc, (_input, context) => {
+    capture(context);
+    return {
+      platform: process.platform,
+      supported: suppressor.supported,
+      holding: suppressor.active,
+      heldBy: tracker.ids(),
+      command: suppressor.describe({ keepDisplayAwake: settingsValues.keepDisplayAwake }),
+    };
+  });
 
   console.log(
     `[keep-awake] ready on ${process.platform}; ` +

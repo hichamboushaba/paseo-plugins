@@ -14,7 +14,11 @@ Whenever that set changes, an idempotent `sync()` call spawns or kills a single 
 
 That child process also watches the plugin's own process ID, so it exits on its own if the plugin ever dies without cleaning up after itself.
 
-Paseo's lifecycle events are explicitly best-effort with no replay, so a `turn_ended` event can in principle be dropped, leaking a hold. To recover from that, a 60-second reconcile timer re-reads the set of currently running agents from the Paseo SDK (`paseo.agents.list`) and drops any held agent ID the daemon no longer reports as running. A failed SDK call during reconcile is treated as "unknown," never as "nothing is running" — a transient error can never release the machine, since that would be exactly the failure mode this plugin exists to prevent.
+Paseo's lifecycle events are explicitly best-effort with no replay, so events can in principle be missed in either direction: a `turn_ended` can be dropped (leaking a hold), or a `turn_started` can be missed because the plugin was not running yet to see it (leaving an agent's turn unheld). To recover from both, a 60-second reconcile timer re-reads the set of currently running agents from the Paseo SDK (`paseo.agents.list`) and reconciles in both directions: it drops any held agent ID the daemon no longer reports as running, and it also acquires a hold for any running agent ID it never saw a `turn_started` for. A failed SDK call during reconcile is treated as "unknown," never as "nothing is running" — a transient error can never release the machine, since that would be exactly the failure mode this plugin exists to prevent.
+
+Calling `paseo.agents.list` at all requires a `PaseoApi` handle, and `PluginServerContext` has no synchronous way to obtain one at startup. The plugin captures a handle opportunistically from the context of every lifecycle hook it registers (`agent.turn_started`, `agent.turn_ended`, `agent.created`, `agent.archived`, `workspace.created`, `workspace.archived`) and from the status RPC handler. The first time a handle is captured since (re)load, the plugin runs one immediate reconcile pass, which is how it recovers a hold that was already missing before any of those events happened to arrive.
+
+Trusting `agents.list` to *start* a hold, not just end one, means the host can stay awake up to one reconcile interval (60 seconds) longer than strictly needed if a "running" status is ever stale-true after an agent has actually stopped. That is the deliberately safe direction: staying awake a little longer than necessary is a nuisance, sleeping while an agent is mid-turn loses work.
 
 ## Install
 
@@ -57,6 +61,9 @@ Any daemon platform other than `darwin`, `linux`, or `win32` is unsupported: the
 - **This only prevents sleep — it cannot wake a host that is already asleep.** If the machine sleeps anyway, the plugin cannot undo it.
 - **No per-workspace or per-provider hold filters.** A hold is global to the host: any agent's live turn, anywhere, keeps the whole machine awake.
 - **`systemd-inhibit` requires systemd.** Linux desktops without systemd have no supported suppression mechanism; the plugin degrades to "unsupported" there.
+- **A reload during an already-running turn can leave the host unheld for the rest of that turn.** `PluginServerContext` has no synchronous way to obtain a `PaseoApi` at startup, so a freshly (re)loaded plugin cannot query or reconcile anything until some lifecycle hook or the status RPC happens to fire and hand it one. An agent whose turn was already in progress before the reload never emits a fresh `turn_started`, so it supplies nothing on its own — recovery depends entirely on some *other* agent, workspace, or status-RPC activity happening on the daemon in the meantime. If nothing else happens, the gap lasts as long as whatever turn was already running.
+
+  Measured on a live daemon with a single long-running turn and no other Paseo activity: the reload completed at 16:19:53.418, no lifecycle event of any kind reached the plugin again until that same turn ended at 17:23:59.984 (`acquired missed holds` never logged in between), and the hold only resumed at 17:24:28.804 when an ordinary new `turn_started` fired for that same agent — a gap of roughly 65 minutes with no sleep suppression active at all. This is a real, currently-open gap, not a theoretical one: a workflow that depends on a single long-running unattended agent surviving a plugin reload is unprotected for however long that turn happens to run.
 
 ## Development
 

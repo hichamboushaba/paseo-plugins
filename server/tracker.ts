@@ -9,7 +9,7 @@ export class HoldTracker {
     this.held.delete(agentId);
   }
 
-  reconcile(runningAgentIds: Iterable<string>): string[] {
+  reconcile(runningAgentIds: Iterable<string>): { added: string[]; dropped: string[] } {
     const running = new Set(runningAgentIds);
     const dropped: string[] = [];
     for (const agentId of this.held) {
@@ -20,7 +20,14 @@ export class HoldTracker {
     for (const agentId of dropped) {
       this.held.delete(agentId);
     }
-    return dropped;
+    const added: string[] = [];
+    for (const agentId of running) {
+      if (!this.held.has(agentId)) {
+        this.held.add(agentId);
+        added.push(agentId);
+      }
+    }
+    return { added, dropped };
   }
 
   clear(): void {
