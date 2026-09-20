@@ -1,9 +1,21 @@
 import { type PluginSurfaceProps, useRpc, useSettings } from "@getpaseo/plugin/client";
-import { SettingsCard, SettingsRow, SettingsSection, SettingsSwitch } from "@getpaseo/plugin/client/ui";
+import {
+  SettingsCard,
+  SettingsRow,
+  SettingsSection,
+  SettingsSelect,
+  SettingsSwitch,
+} from "@getpaseo/plugin/client/ui";
 import { useEffect, useMemo, useState } from "react";
 import { Text, View } from "react-native";
-import { keepAwakeSettings, type KeepAwakeSettings as KeepAwakeValues } from "../shared/settings.js";
+import {
+  KEEP_AWAKE_MODES,
+  keepAwakeSettings,
+  type KeepAwakeMode,
+  type KeepAwakeSettings as KeepAwakeValues,
+} from "../shared/settings.js";
 import { statusRpc } from "../shared/status.js";
+import { MODE_PRESENTATION } from "./modes.js";
 
 type Status = {
   platform: string;
@@ -41,6 +53,11 @@ export function KeepAwakeSettingsScreen({ theme, layout }: PluginSurfaceProps) {
     };
   }, [readStatus]);
 
+  const modeOptions = useMemo(
+    () => KEEP_AWAKE_MODES.map((mode) => ({ label: MODE_PRESENTATION[mode].label, value: mode })),
+    [],
+  );
+
   const styles = useMemo(
     () => ({
       screen: { gap: layout.compact ? 12 : 16 },
@@ -66,11 +83,12 @@ export function KeepAwakeSettingsScreen({ theme, layout }: PluginSurfaceProps) {
     <View style={styles.screen}>
       <SettingsSection title="Keep awake">
         <SettingsCard>
-          <SettingsSwitch
-            label="Hold the host awake while agents work"
-            hint="Starts a sleep assertion when any agent begins a turn and releases it when the last turn ends."
-            value={values?.enabled ?? true}
-            onValueChange={(next) => update({ enabled: next })}
+          <SettingsSelect<KeepAwakeMode>
+            label="Hold the host awake"
+            hint="Choose when the plugin should stop the host from going to sleep."
+            value={values?.mode ?? "auto"}
+            options={modeOptions}
+            onValueChange={(next) => update({ mode: next })}
             disabled={!ready || settings.saving}
           />
           <SettingsSwitch

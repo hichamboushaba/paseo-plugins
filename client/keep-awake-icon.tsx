@@ -2,24 +2,22 @@ import { type PluginButtonIconProps, useSettings } from "@getpaseo/plugin/client
 import { Icon } from "@getpaseo/plugin/client/react-native";
 import { useEffect } from "react";
 import { keepAwakeSettings } from "../shared/settings.js";
+import { MODE_PRESENTATION } from "./modes.js";
 
-export function KeepAwakeIcon({ size, color, theme }: PluginButtonIconProps) {
+export function KeepAwakeIcon({ size, color }: PluginButtonIconProps) {
   const settings = useSettings(keepAwakeSettings);
-  const enabled = settings.status === "ready" ? settings.values.enabled : true;
+  const mode = settings.status === "ready" ? settings.values.mode : "auto";
   const { reload } = settings;
 
-  // The host replaces this icon with a spinner while onPress runs, so a settings
-  // change pushed during the press arrives while the query has no observers and
-  // is never refetched. Re-read once per mount to pick up what was missed.
+  // useSettings is a replica query (staleTime: Infinity, refetchOnMount: false),
+  // so a settings change pushed while no icon is mounted is invalidated but never
+  // refetched, and a remounted icon would serve it stale forever. This icon does
+  // unmount: HeaderButtons tears its button down whenever the workspace list
+  // changes. Re-read once per mount to catch whatever was missed. The empty deps
+  // are deliberate -- reload's identity changes with every query result.
   useEffect(() => {
     void reload().catch(() => undefined);
   }, []);
 
-  return (
-    <Icon
-      name={enabled ? "Coffee" : "Moon"}
-      size={size}
-      color={enabled ? color : theme.colors.foregroundMuted}
-    />
-  );
+  return <Icon name={MODE_PRESENTATION[mode].icon} size={size} color={color} />;
 }

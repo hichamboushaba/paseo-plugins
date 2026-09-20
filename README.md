@@ -1,6 +1,6 @@
 # paseo-keep-awake
 
-Keeps the daemon host awake while any Paseo agent has a live turn running, and releases the hold as soon as every turn ends.
+Keeps the daemon host awake while any Paseo agent has a live turn running, and releases the hold as soon as every turn ends. The hold is tri-state: never, only while an agent is working, or always.
 
 ## How it works
 
@@ -37,17 +37,22 @@ paseo plugin reload keep-awake
 
 ## Usage
 
-- **Header button** — every workspace gets a "Keep awake" button in its header, before the built-in actions. It shows a coffee icon when holding is enabled and a moon icon when it is off. Pressing it toggles the **Hold the host awake while agents work** setting immediately, without opening the settings screen.
-- **Command Center (⌘K)** — two items are registered: "Keep awake settings" opens the settings screen directly, and "Keep awake: turn holding on or off" flips the same setting the header button does.
+- **Header button** — every workspace gets a "Keep awake" button in its header, before the built-in actions. Its icon reflects the current mode: a moon when off, a coffee cup while holding only for working agents, a lightning bolt while always holding. Pressing it opens a popover with all three modes and the display option, rather than cycling through them — with three states, a cycling press makes the user guess where they will land, and the popover also carries the hint text for each mode.
+- **Command Center (⌘K)** — four items are registered: "Keep awake settings" opens the settings screen, and "Keep awake: off", "Keep awake: while an agent is working", and "Keep awake: always" each set that mode directly. Three explicit items beat one cycling item in a search palette, where the user types the state they want rather than watching a button change.
 
-`keepDisplayAwake` (the "Keep the display on too" option) has no header-button or Command Center equivalent — a single button can only carry one action, so it stays reachable from the settings screen only.
+The popover is rendered by the plugin, so it reads the live setting through `useSettings` and has no second copy of the state to keep in sync. That matters: the button's `label` is a plain non-reactive string on the registration, so anything shown outside the icon would have to be hand-synced on every change.
 
 ## Settings
 
 Open **Settings → Plugins → keep-awake** in the Paseo app.
 
-- **Hold the host awake while agents work** — on by default. Starts a sleep assertion as soon as any agent begins a turn and releases it when the last turn ends. When off, the plugin still tracks turns but never spawns a suppression process.
+- **Hold the host awake** — three modes, defaulting to **While an agent is working**:
+  - **Off** — never holds. The plugin still tracks turns, but never spawns a suppression process.
+  - **While an agent is working** — starts a sleep assertion as soon as any agent begins a turn and releases it when the last turn ends.
+  - **Always** — holds for as long as Paseo is running, regardless of agent activity.
 - **Keep the display on too** — macOS and Windows only. Also keeps the display itself from sleeping while a hold is active, not just the system. On Linux, idle inhibition already defers the screen blank on most desktops, so this option has no separate effect there.
+
+Settings are stored at version 2. A version 1 document (which stored a boolean `enabled`) is migrated on read: `enabled: true` — including a missing value, which used to default to true — becomes `auto`, and `enabled: false` becomes `off`. So an existing install keeps behaving exactly as it did before the upgrade.
 
 The same screen shows live status: the host platform, whether a hold is currently active and how many agents hold it, and the exact command the plugin would run (or is running).
 

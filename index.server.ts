@@ -3,7 +3,12 @@ import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { listRunningAgentIdsViaCli } from "./server/cli-agents.js";
 import { SleepSuppressor } from "./server/suppressor.js";
 import { HoldTracker } from "./server/tracker.js";
-import { DEFAULT_SETTINGS, keepAwakeSettings, type KeepAwakeSettings } from "./shared/settings.js";
+import {
+  DEFAULT_SETTINGS,
+  keepAwakeSettings,
+  shouldHold,
+  type KeepAwakeSettings,
+} from "./shared/settings.js";
 import { statusRpc } from "./shared/status.js";
 
 const RECONCILE_INTERVAL_MS = 60_000;
@@ -16,7 +21,7 @@ export default function contribute(server: PluginServerContext) {
   let paseo: PaseoApi | null = null;
 
   const apply = (): void => {
-    suppressor.sync(settingsValues.enabled && tracker.holding, {
+    suppressor.sync(shouldHold(settingsValues.mode, tracker.holding), {
       keepDisplayAwake: settingsValues.keepDisplayAwake,
     });
   };

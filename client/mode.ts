@@ -1,6 +1,10 @@
 import { settingsRpc } from "@getpaseo/plugin";
 import type { PluginCommandCapabilities } from "@getpaseo/plugin/client";
-import { keepAwakeSettings, type KeepAwakeSettings } from "../shared/settings.js";
+import {
+  keepAwakeSettings,
+  type KeepAwakeMode,
+  type KeepAwakeSettings,
+} from "../shared/settings.js";
 
 export type RpcCaller = PluginCommandCapabilities["rpc"];
 
@@ -20,12 +24,18 @@ export async function readKeepAwake(
   return { values: parsed.data, revision: result.revision };
 }
 
-export async function toggleKeepAwake(rpc: RpcCaller): Promise<KeepAwakeSettings | null> {
+export async function setKeepAwakeMode(
+  rpc: RpcCaller,
+  mode: KeepAwakeMode,
+): Promise<KeepAwakeSettings | null> {
   const current = await readKeepAwake(rpc);
   if (current === null) {
     return null;
   }
-  const next: KeepAwakeSettings = { ...current.values, enabled: !current.values.enabled };
+  if (current.values.mode === mode) {
+    return current.values;
+  }
+  const next: KeepAwakeSettings = { ...current.values, mode };
   const written = await rpc(settingsIo.write, { revision: current.revision, values: next });
   return written.status === "saved" ? next : null;
 }

@@ -2,8 +2,11 @@ import type { PluginClientContext } from "@getpaseo/plugin/client";
 import { HeaderButtons } from "./client/header-buttons.js";
 import { KeepAwakeIcon } from "./client/keep-awake-icon.js";
 import { collectAllPages } from "./client/list-all.js";
+import { KeepAwakeModePopover } from "./client/mode-popover.js";
+import { setKeepAwakeMode } from "./client/mode.js";
+import { MODE_PRESENTATION } from "./client/modes.js";
 import { KeepAwakeSettingsScreen } from "./client/settings-screen.js";
-import { toggleKeepAwake } from "./client/toggle.js";
+import { KEEP_AWAKE_MODES } from "./shared/settings.js";
 
 const REFRESH_DEBOUNCE_MS = 250;
 const WORKSPACE_PAGE_LIMIT = 200;
@@ -26,18 +29,21 @@ export default function contribute(client: PluginClientContext) {
     },
   });
 
-  client.addCommandCenterItem({
-    id: "toggle-keep-awake",
-    title: "Keep awake: turn holding on or off",
-    icon: "Coffee",
-    keywords: ["caffeine", "sleep", "insomnia", "display", "awake"],
-    context: "global",
-    async onSelect({ rpc }) {
-      if ((await toggleKeepAwake(rpc)) === null) {
-        throw new Error("Could not change the keep-awake setting");
-      }
-    },
-  });
+  for (const mode of KEEP_AWAKE_MODES) {
+    const { label, icon } = MODE_PRESENTATION[mode];
+    client.addCommandCenterItem({
+      id: `set-keep-awake-${mode}`,
+      title: `Keep awake: ${label.toLowerCase()}`,
+      icon,
+      keywords: ["caffeine", "sleep", "insomnia", "display", "awake"],
+      context: "global",
+      async onSelect({ rpc }) {
+        if ((await setKeepAwakeMode(rpc, mode)) === null) {
+          throw new Error("Could not change the keep-awake setting");
+        }
+      },
+    });
+  }
 
   const buttons = new HeaderButtons({
     add: (workspaceId) =>
@@ -48,12 +54,8 @@ export default function contribute(client: PluginClientContext) {
           title: "Keep awake",
           icon: KeepAwakeIcon,
           behavior: {
-            kind: "action",
-            async onPress() {
-              if ((await toggleKeepAwake(client.rpc)) === null) {
-                throw new Error("Could not change the keep-awake setting");
-              }
-            },
+            kind: "popover",
+            Content: KeepAwakeModePopover,
           },
         },
       }),
