@@ -33,6 +33,13 @@ After a local change:
 paseo plugin reload keep-awake
 ```
 
+## Usage
+
+- **Header button** — every workspace gets a "Keep awake" button in its header, before the built-in actions. It shows a coffee icon when holding is enabled and a moon icon when it is off. Pressing it toggles the **Hold the host awake while agents work** setting immediately, without opening the settings screen.
+- **Command Center (⌘K)** — two items are registered: "Keep awake settings" opens the settings screen directly, and "Keep awake: turn holding on or off" flips the same setting the header button does.
+
+`keepDisplayAwake` (the "Keep the display on too" option) has no header-button or Command Center equivalent — a single button can only carry one action, so it stays reachable from the settings screen only.
+
 ## Settings
 
 Open **Settings → Plugins → keep-awake** in the Paseo app.
