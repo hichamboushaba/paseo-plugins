@@ -40,12 +40,20 @@ export default function contribute(server: PluginServerContext) {
     paseo = context.paseo;
     tracker.add(event.agent.id);
     apply();
+    console.log(
+      `[keep-awake] turn_started agent=${event.agent.id} ` +
+        `holding=${tracker.holding} active=${suppressor.active} ids=${tracker.ids().join(",")}`,
+    );
   });
 
   server.on("agent.turn_ended", (event, context) => {
     paseo = context.paseo;
     tracker.remove(event.agent.id);
     apply();
+    console.log(
+      `[keep-awake] turn_ended agent=${event.agent.id} ` +
+        `holding=${tracker.holding} active=${suppressor.active} ids=${tracker.ids().join(",")}`,
+    );
   });
 
   const reconcile = async (): Promise<void> => {
