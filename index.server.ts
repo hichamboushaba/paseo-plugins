@@ -1,5 +1,6 @@
 import type { PaseoApi } from "@getpaseo/client";
 import type { PluginServerContext } from "@getpaseo/plugin/server";
+import { listRunningAgentIdsViaCli } from "./server/cli-agents.js";
 import { SleepSuppressor } from "./server/suppressor.js";
 import { HoldTracker } from "./server/tracker.js";
 import { DEFAULT_SETTINGS, keepAwakeSettings, type KeepAwakeSettings } from "./shared/settings.js";
@@ -36,12 +37,14 @@ export default function contribute(server: PluginServerContext) {
     }
   });
 
+  let reconcileEpoch = 0;
+
   async function reconcile(): Promise<void> {
-    if (paseo === null) {
-      return;
-    }
-    const running = await listRunningAgentIds(paseo);
-    if (running === null) {
+    const epoch = ++reconcileEpoch;
+    const running = paseo !== null
+      ? await listRunningAgentIds(paseo)
+      : await listRunningAgentIdsViaCli();
+    if (running === null || epoch !== reconcileEpoch) {
       return;
     }
     const { added, dropped } = tracker.reconcile(running);
@@ -97,6 +100,10 @@ export default function contribute(server: PluginServerContext) {
       console.error("[keep-awake] reconcile failed:", error);
     });
   }, RECONCILE_INTERVAL_MS);
+
+  void reconcile().catch((error: unknown) => {
+    console.error("[keep-awake] startup reconcile failed:", error);
+  });
 
   server.handle(statusRpc, (_input, context) => {
     capture(context);
