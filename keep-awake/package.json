@@ -21,6 +21,7 @@
     "client/",
     "server/",
     "shared/",
+    "assets/",
     "!**/*.test.ts",
     "LICENSE",
     "README.md"

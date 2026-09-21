@@ -1,90 +1,100 @@
 # paseo-keep-awake
 
-Keeps the daemon host awake while any Paseo agent has a live turn running, and releases the hold as soon as every turn ends. The hold is tri-state: never, only while an agent is working, or always.
+Keeps the Paseo daemon host awake while agents work, then releases the hold when the last turn ends. It can also hold continuously, stay completely off, and keep the display awake on supported platforms.
 
-## How it works
-
-The server half of the plugin listens for the `agent.turn_started` and `agent.turn_ended` lifecycle hooks and maintains a set of agent IDs that currently have a live turn, keyed by `event.agent.id`. It is not keyed by `turnId`: that value is provider-reported, can be `null`, and can repeat after a session reopens, so it is not a usable key.
-
-Whenever that set changes, an idempotent `sync()` call spawns or kills a single platform-native sleep-suppression child process:
-
-- macOS: `caffeinate`
-- Linux: `systemd-inhibit`
-- Windows: PowerShell `SetThreadExecutionState`
-
-That child process also watches the plugin's own process ID, so it exits on its own if the plugin ever dies without cleaning up after itself.
-
-Paseo's lifecycle events are explicitly best-effort with no replay, so events can in principle be missed in either direction: a `turn_ended` can be dropped (leaking a hold), or a `turn_started` can be missed because the plugin was not running yet to see it (leaving an agent's turn unheld). To recover from both, a 60-second reconcile timer re-reads the set of currently running agents from the Paseo SDK (`paseo.agents.list`) and reconciles in both directions: it drops any held agent ID the daemon no longer reports as running, and it also acquires a hold for any running agent ID it never saw a `turn_started` for. A failed SDK call during reconcile is treated as "unknown," never as "nothing is running" — a transient error can never release the machine, since that would be exactly the failure mode this plugin exists to prevent.
-
-Calling `paseo.agents.list` at all requires a `PaseoApi` handle, and `PluginServerContext` has no synchronous way to obtain one at startup. The plugin captures a handle opportunistically from the context of every lifecycle hook it registers (`agent.turn_started`, `agent.turn_ended`, `agent.created`, `agent.archived`, `workspace.created`, `workspace.archived`) and from the status RPC handler.
-
-That alone is not enough after a reload. An agent whose turn began before the reload never emits a second `turn_started`, so on a daemon running a single agent no hook fires at all and the plugin stays blind for the rest of that turn. So reconcile does not depend on having a handle: when none has been captured yet it shells out to the Paseo CLI instead, running `paseo agent ls -g --json` and filtering for `status === "running"`. The binary path and daemon home come from the `PASEO_CLI` and `PASEO_HOME` environment variables that Paseo gives every plugin subprocess. One reconcile runs immediately at load rather than waiting for the first timer tick, so a reload recovers its holds in well under a second. The in-process SDK is still preferred whenever a handle is available, since it needs no subprocess.
-
-Trusting `agents.list` to *start* a hold, not just end one, means the host can stay awake up to one reconcile interval (60 seconds) longer than strictly needed if a "running" status is ever stale-true after an agent has actually stopped. That is the deliberately safe direction: staying awake a little longer than necessary is a nuisance, sleeping while an agent is mid-turn loses work.
+Requires Paseo `>=0.9.0-beta.2`.
 
 ## Install
 
+Install the plugin directly from this repository:
+
 ```bash
-paseo plugin install /path/to/paseo-keep-awake
+paseo plugin install github:hichamboushaba/paseo-plugins:keep-awake
 paseo plugin ls keep-awake
 ```
 
-After a local change:
+For local development, install the directory instead:
+
+```bash
+paseo plugin install /absolute/path/to/paseo-plugins/keep-awake
+```
+
+`paseo plugin ls` should report `keep-awake` as `running`. After changing the source, reload it without restarting the daemon:
 
 ```bash
 paseo plugin reload keep-awake
 ```
 
+Paseo plugins are trusted code. The client contribution runs in the app; the server contribution runs on the daemon host with access to that machine.
+
 ## Usage
 
-- **Header button** — every workspace gets a "Keep awake" button in its header, before the built-in actions. Its icon reflects the current mode: a moon when off, a coffee cup while holding only for working agents, a lightning bolt while always holding. Pressing it opens a popover with all three modes and the display option, rather than cycling through them — with three states, a cycling press makes the user guess where they will land, and the popover also carries the hint text for each mode.
-- **Command Center (⌘K)** — four items are registered: "Keep awake settings" opens the settings screen, and "Keep awake: off", "Keep awake: while an agent is working", and "Keep awake: always" each set that mode directly. Three explicit items beat one cycling item in a search palette, where the user types the state they want rather than watching a button change.
+Every workspace gets a mode button in its header. The icon reflects the current mode, and pressing it opens all three choices plus the display option. It opens a menu rather than cycling: with three states, a cycling button makes you guess where the next press will land.
 
-The popover is rendered by the plugin, so it reads the live setting through `useSettings` and has no second copy of the state to keep in sync. That matters: the button's `label` is a plain non-reactive string on the registration, so anything shown outside the icon would have to be hand-synced on every change.
+![Keep Awake controls in the workspace header](assets/workspace-menu.png)
 
-## Settings
+| Mode | Behaviour |
+| --- | --- |
+| **Off** | Never holds the host awake. Turn tracking continues, so changing modes is immediate. |
+| **While an agent is working** | Holds from the first live agent turn until the last one ends. This is the default. |
+| **Always** | Holds for as long as Paseo is running. |
 
-Open **Settings → Plugins → keep-awake** in the Paseo app.
+The Command Center exposes the same controls as four explicit actions: one opens settings, and one selects each mode. Explicit actions work better in a search palette than a single command that cycles through hidden state.
 
-- **Hold the host awake** — three modes, defaulting to **While an agent is working**:
-  - **Off** — never holds. The plugin still tracks turns, but never spawns a suppression process.
-  - **While an agent is working** — starts a sleep assertion as soon as any agent begins a turn and releases it when the last turn ends.
-  - **Always** — holds for as long as Paseo is running, regardless of agent activity.
-- **Keep the display on too** — macOS and Windows only. Also keeps the display itself from sleeping while a hold is active, not just the system. On Linux, idle inhibition already defers the screen blank on most desktops, so this option has no separate effect there.
-- **Command** — an optional custom command that replaces the built-in per-platform command entirely, rather than layering on top of it. Any built-in command satisfies three properties, and a custom one must too: it must block for as long as the hold should last rather than forking and returning immediately, it must exit when sent `SIGTERM` (`sync()` and `stop()` release a hold by killing the child), and it should self-terminate if the plugin's own process ever dies without cleaning up after itself first. Include the literal placeholder `{pid}` anywhere in the command and it is substituted with the plugin's own process ID before spawning — for example, `caffeinate -i -m -w {pid}` — which is how the built-in macOS command already satisfies that third property; the placeholder is optional, but omitting it means the command has no way to notice the plugin is gone. The command line is tokenized by the plugin itself, honoring single and double quotes, and the resulting argv is spawned directly rather than through a shell, so a `SIGTERM` reaches the real process instead of a shell wrapper that might not forward it. Typing is local until you press **Apply**; leaving the field blank and applying (or pressing **Reset**) restores the built-in command for the current platform. The plugin does not police that contract — it has no way to outlive its own process in order to enforce it — so instead it reports what it observes. A command that exits on its own is reported as a command error on the status card below, which is what catches fire-and-forget commands like `xset s off` or `caffeine` that return immediately instead of blocking. A command that ignores `SIGTERM`, or that omits `{pid}`, can outlive the plugin: the `{pid}` watchdog is the only thing that guarantees cleanup if the plugin dies without releasing the hold first, which is why every built-in command embeds one. Because the custom command fully replaces the built-in one, **Keep the display on too** is disabled while a custom command is set: there is no built-in command left for that flag to modify.
+Open **Settings → Plugins → keep-awake → ··· → Settings** for the full configuration and live status:
 
-Settings are stored at version 2. A version 1 document (which stored a boolean `enabled`) is migrated on read: `enabled: true` — including a missing value, which used to default to true — becomes `auto`, and `enabled: false` becomes `off`. So an existing install keeps behaving exactly as it did before the upgrade.
+![Keep Awake settings and live status](assets/settings.png)
 
-The same screen shows live status: the host platform, whether a hold is currently active and how many agents hold it, and the exact command the plugin would run (or is running).
+The screen shows the daemon platform, whether a hold is active, how many agents currently require it, and the exact command being used.
 
 ## Platform support
 
-| Daemon platform | Mechanism | Display option | Tested |
+| Daemon platform | Built-in mechanism | Display option | Tested |
 | --- | --- | --- | --- |
-| macOS | `caffeinate -i -m [-d] -w <plugin pid>` | Supported (`-d`) | Yes, on macOS 26 / Paseo 0.9.0-beta.2 |
-| Linux | `systemd-inhibit --what=idle --mode=block` | Not a separate option; idle inhibition defers screen blank on most desktops | No — argv-level unit tests only |
-| Windows | PowerShell `SetThreadExecutionState` | Supported (`ES_DISPLAY_REQUIRED`) | No — argv-level unit tests only |
+| macOS | `caffeinate -i -m [-d] -w <plugin pid>` | Supported with `-d` | macOS 26, Paseo 0.9.0-beta.2 |
+| Linux | `systemd-inhibit --what=idle --mode=block` | Idle inhibition normally defers screen blanking | Argument-level tests only |
+| Windows | PowerShell `SetThreadExecutionState` | Supported with `ES_DISPLAY_REQUIRED` | Argument-level tests only |
 
-The Linux and Windows code paths were written against their documented APIs and are covered by argv-level unit tests only. Neither has ever been run against a real Linux or Windows daemon host.
+Linux requires systemd. An unsupported platform still loads the plugin and tracks turns, but it does not spawn a hold unless you provide a custom command.
 
-Any daemon platform other than `darwin`, `linux`, or `win32` is unsupported: the plugin loads and tracks turns, but never spawns a suppression process.
+## Custom command
 
-A custom command (see **Command** under [Settings](#settings)) replaces the built-in mechanism outright, on any platform — including one not in this table, or a Linux desktop without systemd. The status RPC's `supported` flag reflects this: a valid custom command makes an otherwise-unsupported host report as supported.
+The optional command replaces the built-in mechanism completely; it does not wrap or extend it. The plugin tokenizes the value and spawns the resulting program directly, without a shell.
 
-`supported` answers "is there a mechanism here?", not "is the plugin holding?", so a custom command that *cannot* run does not get to answer it. An unbalanced quote or a blank program name is reported separately as `commandError`, and `supported` falls back to what the built-in mechanism would have said: `true` on macOS, where the platform is not what needs fixing, and still `false` on a platform with no built-in, where clearing the bad command would leave you with nothing and the card needs to say so. The settings screen blocks **Apply** on the same rule, so reaching that state takes a settings document written outside the app.
+A useful command must satisfy three properties:
+
+1. It blocks for as long as the hold should remain active.
+2. It exits when the plugin sends `SIGTERM`.
+3. It should stop on its own if the plugin process dies.
+
+Use the literal `{pid}` placeholder for the third property. It is replaced with the plugin process ID before spawning. For example:
+
+```text
+caffeinate -i -m -w {pid}
+```
+
+The placeholder is optional, but omitting it means the command has no way to notice that the plugin disappeared. A command that forks and exits immediately is also unsuitable; the settings screen reports that early exit as a command error.
+
+While a custom command is set, **Keep the display on too** is disabled because there is no built-in command left for that option to modify. Clear the field and apply, or press **Reset**, to restore the platform default.
+
+## How it stays correct
+
+The server contribution listens for `agent.turn_started` and `agent.turn_ended`, tracks active agents by ID, and owns one sleep-suppression child process. Every built-in child watches the plugin PID as well as the plugin watching the child, so either side disappearing releases the operating-system assertion.
+
+Lifecycle delivery is best-effort, so event handling alone is not enough. Every 60 seconds the plugin reconciles its tracker against the daemon's running agents in both directions: it acquires holds for starts it missed and releases holds for ends it missed. A failed query means “unknown,” never “nothing is running.” That bias is deliberate: staying awake a little too long is harmless; sleeping during a live turn is not.
+
+Immediately after a reload there may not be a `PaseoApi` handle yet. The first reconciliation therefore falls back to `paseo agent ls -g --json`, using the `PASEO_CLI` and `PASEO_HOME` values supplied to the plugin process. Once an SDK handle is available, later reconciliations use it directly. If neither path can list agents, the plugin keeps its current hold state rather than making a destructive guess.
+
+Settings are host-scoped and stored at version 2. Existing version 1 values migrate automatically: enabled becomes **While an agent is working**, and disabled becomes **Off**.
 
 ## Limitations
 
-- **The hold persists while an agent waits on a permission prompt.** A permission request does not end the agent's turn — `PluginAgentSnapshot.status` stays `"running"` and the pending approval is surfaced orthogonally as `requiresAttention: true` with `attentionReason: "permission"`, so no `agent.turn_ended` event fires while it waits. The host therefore stays awake for as long as the prompt goes unanswered; that is a minor inefficiency, not a missing feature — the turn genuinely has not ended, and answering the prompt is ordinarily quick.
-- **Lid close still sleeps the machine.** `caffeinate` assertions do not survive clamshell sleep on Apple Silicon, and no plugin can change that.
-- **This only prevents sleep — it cannot wake a host that is already asleep.** If the machine sleeps anyway, the plugin cannot undo it.
-- **No per-workspace or per-provider hold filters.** A hold is global to the host: any agent's live turn, anywhere, keeps the whole machine awake.
-- **`systemd-inhibit` requires systemd.** Linux desktops without systemd have no supported suppression mechanism; the plugin degrades to "unsupported" there.
-- **A reloaded plugin recovers its holds at startup by asking the Paseo CLI.** `PluginServerContext` has no synchronous way to obtain a `PaseoApi` at startup, so immediately after a (re)load there is no in-process handle to query yet. Rather than waiting on some lifecycle hook or the status RPC to hand it one, the plugin runs one reconcile pass immediately at startup, and that pass falls back to shelling out to the Paseo CLI (`paseo agent ls -g --json`, using the `PASEO_CLI` and `PASEO_HOME` values the plugin subprocess is given) whenever no `PaseoApi` is available yet. The in-process SDK path is still preferred the moment a hook or RPC call supplies one — the CLI is only the seed path for the instant right after a reload.
-
-  This closes a gap that was previously measured at roughly 65 minutes: a reload at 16:19:53.418 during a still-running turn left the host unheld until that turn happened to end at 17:23:59.984, because no lifecycle event of any kind reached the plugin in between. With the CLI fallback in place, reproducing the same scenario — reload during an already-running turn, with no new `turn_started` for it — now recovers the hold within about a third of a second of the plugin reporting ready: reload logged at 19:32:54.613, `[keep-awake] ready on darwin; supported` at 19:32:55.014, `[keep-awake] acquired missed holds: <agent id>` at 19:32:55.339, with that agent's last `turn_started` over five minutes in the past and no lifecycle event in between.
-
-  **Caveat:** the fallback depends on the plugin subprocess being able to run a `paseo` binary. If `PASEO_CLI` is unset and no `paseo` executable is on the subprocess's `PATH`, the CLI call fails, startup reconcile treats that as "could not determine" — never as "nothing is running," so it still can't wrongly release the machine — and the old gap returns until some other lifecycle hook or the status RPC happens to supply a `PaseoApi`.
+- A permission prompt does not end an agent turn, so the host remains awake while that prompt waits for an answer.
+- Closing a MacBook lid still sleeps Apple Silicon machines. `caffeinate` cannot override clamshell sleep.
+- The plugin prevents sleep; it cannot wake a machine that is already asleep.
+- Holds are host-wide. There are no per-workspace or per-provider filters.
+- Linux hosts without systemd need a custom command.
+- Reload recovery depends on the plugin process being able to run the Paseo CLI until an SDK handle becomes available.
 
 ## Development
 
@@ -94,4 +104,8 @@ npm run typecheck
 npm test
 ```
 
-Both must exit 0 before every install or reload.
+Both checks must pass before installing or reloading the plugin.
+
+## License
+
+MIT
