@@ -9,16 +9,22 @@ export class HoldTracker {
     this.held.delete(agentId);
   }
 
-  reconcile(runningAgentIds: Iterable<string>): { added: string[]; dropped: string[] } {
+  // `skipDrops` lets a caller apply a snapshot it knows may be stale: a running agent it hasn't
+  // seen yet is always safe to add (it only over-holds), but dropping a held agent on a stale
+  // snapshot can release a hold for a turn that is still live. Skipping drops means `dropped` is
+  // always `[]` here -- there is nothing else for it to report.
+  reconcile(runningAgentIds: Iterable<string>, skipDrops = false): { added: string[]; dropped: string[] } {
     const running = new Set(runningAgentIds);
     const dropped: string[] = [];
-    for (const agentId of this.held) {
-      if (!running.has(agentId)) {
-        dropped.push(agentId);
+    if (!skipDrops) {
+      for (const agentId of this.held) {
+        if (!running.has(agentId)) {
+          dropped.push(agentId);
+        }
       }
-    }
-    for (const agentId of dropped) {
-      this.held.delete(agentId);
+      for (const agentId of dropped) {
+        this.held.delete(agentId);
+      }
     }
     const added: string[] = [];
     for (const agentId of running) {

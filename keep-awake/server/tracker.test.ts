@@ -100,6 +100,25 @@ test("reconcile with no running agents drops everything", () => {
   assert.equal(tracker.holding, false);
 });
 
+test("reconcile with skipDrops keeps stale holds but still adds newly running agents", () => {
+  const tracker = new HoldTracker();
+  tracker.add("stale");
+  const { added, dropped } = tracker.reconcile(["fresh"], true);
+  assert.deepEqual(added, ["fresh"]);
+  assert.deepEqual(dropped, []);
+  assert.deepEqual(tracker.ids().sort(), ["fresh", "stale"]);
+});
+
+test("reconcile with skipDrops and an empty snapshot leaves existing holds untouched", () => {
+  const tracker = new HoldTracker();
+  tracker.add("a");
+  const { added, dropped } = tracker.reconcile([], true);
+  assert.deepEqual(added, []);
+  assert.deepEqual(dropped, []);
+  assert.deepEqual(tracker.ids(), ["a"]);
+  assert.equal(tracker.holding, true);
+});
+
 test("clear releases every hold", () => {
   const tracker = new HoldTracker();
   tracker.add("a");

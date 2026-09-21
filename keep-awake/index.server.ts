@@ -14,13 +14,20 @@ import { statusRpc } from "./shared/status.js";
 const RECONCILE_INTERVAL_MS = 60_000;
 const PAGE_LIMIT = 200;
 
-export default function contribute(server: PluginServerContext) {
-  const tracker = new HoldTracker();
-  const suppressor = new SleepSuppressor();
+export default function contribute(
+  server: PluginServerContext,
+  dependencies: { tracker?: HoldTracker; suppressor?: SleepSuppressor } = {},
+) {
+  const tracker = dependencies.tracker ?? new HoldTracker();
+  const suppressor = dependencies.suppressor ?? new SleepSuppressor();
   let settingsValues: KeepAwakeSettings = DEFAULT_SETTINGS;
   let paseo: PaseoApi | null = null;
+  let disposed = false;
 
   const apply = (): void => {
+    if (disposed) {
+      return;
+    }
     suppressor.sync(shouldHold(settingsValues.mode, tracker.holding), {
       keepDisplayAwake: settingsValues.keepDisplayAwake,
       customCommand: settingsValues.customCommand,
@@ -29,34 +36,48 @@ export default function contribute(server: PluginServerContext) {
 
   const settings = server.registerSettings(keepAwakeSettings);
 
-  void settings.read().then((state) => {
-    if (state.status === "ready") {
+  let sawSettingsUpdate = false;
+
+  void settings
+    .read()
+    .then((state) => {
+      if (sawSettingsUpdate || state.status !== "ready") {
+        return;
+      }
       settingsValues = state.values;
       apply();
-    }
-  });
+    })
+    .catch((error: unknown) => {
+      console.error("[keep-awake] settings read failed:", error);
+    });
 
   const unsubscribe = settings.subscribe((state) => {
-    if (state.status === "ready") {
-      settingsValues = state.values;
-      apply();
+    if (state.status !== "ready") {
+      return;
     }
+    sawSettingsUpdate = true;
+    settingsValues = state.values;
+    apply();
   });
 
   let reconcileEpoch = 0;
+  let mutationEpoch = 0;
 
   async function reconcile(): Promise<void> {
     const epoch = ++reconcileEpoch;
+    const mutationsAtStart = mutationEpoch;
     const running = paseo !== null
       ? await listRunningAgentIds(paseo)
       : await listRunningAgentIdsViaCli();
-    if (running === null || epoch !== reconcileEpoch) {
+    if (disposed || running === null || epoch !== reconcileEpoch) {
       return;
     }
-    const { added, dropped } = tracker.reconcile(running);
-    if (added.length === 0 && dropped.length === 0) {
-      return;
-    }
+    // A turn_started/turn_ended handler may have mutated the tracker while we were awaiting the
+    // snapshot above. That handler already applied its own change, so an add from a stale
+    // snapshot is harmless (it only over-holds briefly), but a drop could release a hold for a
+    // turn that started after the snapshot was taken -- skip drops whenever that race happened.
+    const skipDrops = mutationEpoch !== mutationsAtStart;
+    const { added, dropped } = tracker.reconcile(running, skipDrops);
     if (added.length > 0) {
       console.log(`[keep-awake] acquired missed holds: ${added.join(", ")}`);
     }
@@ -79,6 +100,7 @@ export default function contribute(server: PluginServerContext) {
   server.on("agent.turn_started", (event, context) => {
     capture(context);
     tracker.add(event.agent.id);
+    mutationEpoch++;
     apply();
     console.log(
       `[keep-awake] turn_started agent=${event.agent.id} ` +
@@ -89,6 +111,7 @@ export default function contribute(server: PluginServerContext) {
   server.on("agent.turn_ended", (event, context) => {
     capture(context);
     tracker.remove(event.agent.id);
+    mutationEpoch++;
     apply();
     console.log(
       `[keep-awake] turn_ended agent=${event.agent.id} ` +
@@ -132,6 +155,7 @@ export default function contribute(server: PluginServerContext) {
   );
 
   return () => {
+    disposed = true;
     clearInterval(timer);
     unsubscribe();
     tracker.clear();

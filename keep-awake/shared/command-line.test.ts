@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { substitutePid, tokenizeCommandLine } from "./command-line.js";
+import { parseCommandLine, substitutePid, tokenizeCommandLine } from "./command-line.js";
 
 test("splits a plain command line on whitespace", () => {
   assert.deepEqual(tokenizeCommandLine("caffeinate -i -m"), { tokens: ["caffeinate", "-i", "-m"] });
@@ -60,4 +60,36 @@ test("substitutePid replaces the placeholder wherever it appears in a token", ()
 
 test("substitutePid leaves tokens without the placeholder untouched", () => {
   assert.deepEqual(substitutePid(["caffeinate", "-i", "-m"], 4242), ["caffeinate", "-i", "-m"]);
+});
+
+test("parseCommandLine accepts a command line that tokenizes into a runnable argv", () => {
+  assert.deepEqual(parseCommandLine("caffeinate -i -m -w {pid}"), {
+    tokens: ["caffeinate", "-i", "-m", "-w", "{pid}"],
+  });
+});
+
+test("parseCommandLine passes a tokenize error straight through", () => {
+  assert.deepEqual(parseCommandLine('caffeinate --why="never closed'), { error: 'Unbalanced " quote' });
+});
+
+test("parseCommandLine treats blank input as no command rather than a bad one", () => {
+  assert.deepEqual(parseCommandLine(""), { tokens: [] });
+  assert.deepEqual(parseCommandLine("   \t  "), { tokens: [] });
+});
+
+test("parseCommandLine rejects a program name with nothing visible in it", () => {
+  assert.deepEqual(parseCommandLine('""'), { error: "Command must start with a program name" });
+  assert.deepEqual(parseCommandLine('"" -w {pid}'), { error: "Command must start with a program name" });
+  // Would otherwise reach spawn and come back as `spawn   ENOENT`, naming nothing the user can see.
+  assert.deepEqual(parseCommandLine('" " -w {pid}'), { error: "Command must start with a program name" });
+});
+
+test("parseCommandLine allows spaces inside a program name that is not itself blank", () => {
+  assert.deepEqual(parseCommandLine('"/Applications/My App/bin/tool" -w {pid}'), {
+    tokens: ["/Applications/My App/bin/tool", "-w", "{pid}"],
+  });
+});
+
+test("parseCommandLine allows an empty argument after a real program name", () => {
+  assert.deepEqual(parseCommandLine('runner --label="" ""'), { tokens: ["runner", "--label=", ""] });
 });

@@ -1,4 +1,4 @@
-import { substitutePid, tokenizeCommandLine } from "../shared/command-line.js";
+import { parseCommandLine, substitutePid } from "../shared/command-line.js";
 
 export interface SuppressionOptions {
   keepDisplayAwake: boolean;
@@ -9,6 +9,13 @@ export interface SuppressionCommand {
   command: string;
   args: string[];
 }
+
+// Resolving a command has three outcomes, and collapsing any two of them points the user at the
+// wrong fix: "invalid" is their command to correct, "unsupported" is the host's to live with.
+export type SuppressionResolution =
+  | { status: "ok"; spec: SuppressionCommand }
+  | { status: "invalid"; error: string }
+  | { status: "unsupported" };
 
 const WHY = "A Paseo agent is working";
 const WHO = "paseo-keep-awake";
@@ -21,7 +28,7 @@ export function suppressionCommand(
   platform: NodeJS.Platform,
   options: SuppressionOptions,
   watchPid: number,
-): SuppressionCommand | null {
+): SuppressionResolution {
   const custom = customSuppressionCommand(options.customCommand, watchPid);
   if (custom !== undefined) {
     return custom;
@@ -33,54 +40,53 @@ export function suppressionCommand(
         args.push("-d");
       }
       args.push("-w", String(watchPid));
-      return { command: "caffeinate", args };
+      return { status: "ok", spec: { command: "caffeinate", args } };
     }
     case "linux":
       return {
-        command: "systemd-inhibit",
-        args: [
-          "--what=idle",
-          `--who=${WHO}`,
-          `--why=${WHY}`,
-          "--mode=block",
-          "sh",
-          "-c",
-          `while kill -0 ${watchPid} 2>/dev/null; do sleep 5; done`,
-        ],
+        status: "ok",
+        spec: {
+          command: "systemd-inhibit",
+          args: [
+            "--what=idle",
+            `--who=${WHO}`,
+            `--why=${WHY}`,
+            "--mode=block",
+            "sh",
+            "-c",
+            `while kill -0 ${watchPid} 2>/dev/null; do sleep 5; done`,
+          ],
+        },
       };
     case "win32":
       return {
-        command: "powershell.exe",
-        args: ["-NoProfile", "-NonInteractive", "-Command", windowsScript(options, watchPid)],
+        status: "ok",
+        spec: {
+          command: "powershell.exe",
+          args: ["-NoProfile", "-NonInteractive", "-Command", windowsScript(options, watchPid)],
+        },
       };
     default:
-      return null;
+      return { status: "unsupported" };
   }
 }
 
-// A blank command means "no override" and falls through to the platform switch above
-// (signalled by `undefined`). A non-blank command that fails to tokenise is a user error, not
-// a reason to silently fall back to the built-in one (signalled by `null`, same as an
-// unsupported platform).
+// A blank command means "no override" and falls through to the platform switch above (signalled by
+// `undefined`). A non-blank one resolves here either way: a command the user typed but that cannot
+// be spawned is theirs to fix, not a reason to silently fall back to the built-in one.
 function customSuppressionCommand(
   customCommand: string,
   watchPid: number,
-): SuppressionCommand | null | undefined {
-  const tokenized = tokenizeCommandLine(customCommand);
-  if ("error" in tokenized) {
-    return null;
+): SuppressionResolution | undefined {
+  const parsed = parseCommandLine(customCommand);
+  if ("error" in parsed) {
+    return { status: "invalid", error: parsed.error };
   }
-  if (tokenized.tokens.length === 0) {
+  if (parsed.tokens.length === 0) {
     return undefined;
   }
-  const [command, ...args] = substitutePid(tokenized.tokens, watchPid);
-  if (command === "") {
-    // A quoted empty first token (e.g. `"" -w {pid}`) tokenises but isn't spawnable — Node's
-    // spawn() throws synchronously for an empty command, so treat it the same as `null` rather
-    // than let that exception escape sync()/apply() and crash the plugin.
-    return null;
-  }
-  return { command, args };
+  const [command, ...args] = substitutePid(parsed.tokens, watchPid);
+  return { status: "ok", spec: { command, args } };
 }
 
 function windowsScript(options: SuppressionOptions, watchPid: number): string {

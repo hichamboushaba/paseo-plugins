@@ -1,9 +1,11 @@
-export type TokenizeResult = { tokens: string[] } | { error: string };
+export type CommandLineResult = { tokens: string[] } | { error: string };
 
-// Hand-rolled rather than reused from a shell-parsing package: this only ever needs to
-// understand quoting, not the rest of shell syntax (globs, pipes, env vars, ...), and pulling
-// in a real shell grammar would let users write things spawning-without-a-shell can't run anyway.
-export function tokenizeCommandLine(input: string): TokenizeResult {
+// The lexical half of parseCommandLine, which is what callers outside this module want -- this
+// answers only whether the quoting is well formed. Hand-rolled rather than reused from a
+// shell-parsing package: it only ever needs to understand quoting, not the rest of shell syntax
+// (globs, pipes, env vars, ...), and pulling in a real shell grammar would let users write things
+// spawning-without-a-shell can't run anyway.
+export function tokenizeCommandLine(input: string): CommandLineResult {
   const tokens: string[] = [];
   let current = "";
   let inToken = false;
@@ -42,6 +44,25 @@ export function tokenizeCommandLine(input: string): TokenizeResult {
     tokens.push(current);
   }
   return { tokens };
+}
+
+// Tokenising says whether the quoting is well formed; it does not say whether the result can be
+// spawned. A blank argv[0] is the gap between the two: `"" -w {pid}` quotes correctly and tokenises
+// cleanly, yet names no program to run. Both the settings screen and the server validate through
+// here, so a command line this rejects is never saved and never spawned. It is not the whole of
+// what spawning can reject -- a missing program still fails at spawn time, reported as a command
+// error -- but it is the part worth catching before the hold silently stops working.
+export function parseCommandLine(input: string): CommandLineResult {
+  const parsed = tokenizeCommandLine(input);
+  if ("error" in parsed) {
+    return parsed;
+  }
+  // No tokens at all is the default "no custom command" rather than a bad one; a first token with
+  // nothing visible in it names no program, and reports better here than as `spawn   ENOENT`.
+  if (parsed.tokens.length > 0 && parsed.tokens[0].trim() === "") {
+    return { error: "Command must start with a program name" };
+  }
+  return parsed;
 }
 
 // {pid} can appear mid-token (`--pid={pid}`), so this substitutes rather than requiring a

@@ -11,7 +11,7 @@ import {
 } from "@getpaseo/plugin/client/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Text, View } from "react-native";
-import { tokenizeCommandLine } from "../shared/command-line.js";
+import { parseCommandLine } from "../shared/command-line.js";
 import {
   KEEP_AWAKE_MODES,
   keepAwakeSettings,
@@ -101,12 +101,12 @@ export function KeepAwakeSettingsScreen({ theme, layout }: PluginSurfaceProps) {
 
   const hasCustomCommand = savedCommand !== "";
   const effectiveDraft = draftCommand ?? savedCommand;
-  const tokenized = tokenizeCommandLine(effectiveDraft);
-  const tokenizeError = "error" in tokenized ? tokenized.error : null;
+  const parsed = parseCommandLine(effectiveDraft);
+  const commandLineError = "error" in parsed ? parsed.error : null;
   const isDirty = effectiveDraft !== savedCommand;
 
   const applyCommand = () => {
-    if (tokenizeError !== null) {
+    if (commandLineError !== null) {
       return;
     }
     update({ customCommand: effectiveDraft });
@@ -156,14 +156,14 @@ export function KeepAwakeSettingsScreen({ theme, layout }: PluginSurfaceProps) {
             placeholder="e.g. caffeinate -i -m -w {pid}"
             initialValue={savedCommand}
             onChangeText={setDraftCommand}
-            error={tokenizeError}
+            error={commandLineError}
             disabled={!ready || settings.saving}
           />
           <SettingsAction
             label="Apply the command above"
             actionLabel="Apply"
             onPress={applyCommand}
-            disabled={!ready || settings.saving || !isDirty || tokenizeError !== null}
+            disabled={!ready || settings.saving || !isDirty || commandLineError !== null}
           />
           <SettingsAction
             label="Reset to the built-in command"
