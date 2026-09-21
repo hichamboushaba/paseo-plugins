@@ -1,8 +1,17 @@
 {
   "name": "paseo-keep-awake",
-  "private": true,
   "version": "0.1.0",
+  "private": true,
   "description": "Keeps the daemon host awake while any Paseo agent has a live turn running.",
+  "keywords": [
+    "paseo",
+    "paseo-plugin",
+    "keep-awake",
+    "caffeinate",
+    "sleep",
+    "power-management"
+  ],
+  "author": "Hicham Boushaba",
   "license": "MIT",
   "type": "module",
   "files": [
@@ -12,6 +21,7 @@
     "client/",
     "server/",
     "shared/",
+    "!**/*.test.ts",
     "LICENSE",
     "README.md"
   ],

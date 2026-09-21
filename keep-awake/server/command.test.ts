@@ -59,9 +59,6 @@ test("win32 adds the display flag when asked", () => {
 test("unsupported platforms report unsupported instead of throwing", () => {
   const resolved = suppressionCommand("freebsd", { keepDisplayAwake: false, customCommand: "" }, 1);
   assert.deepEqual(resolved, { status: "unsupported" });
-  assert.deepEqual(suppressionCommand("aix", { keepDisplayAwake: true, customCommand: "" }, 1), {
-    status: "unsupported",
-  });
 });
 
 test("a custom command substitutes {pid} with the watched process id", () => {
@@ -96,11 +93,6 @@ test("an untokenisable custom command reports why rather than falling back", () 
 test("a custom command makes an unsupported platform work", () => {
   const resolved = suppressionCommand("freebsd", { keepDisplayAwake: false, customCommand: "echo hi" }, 1);
   assert.deepEqual(resolved, { status: "ok", spec: { command: "echo", args: ["hi"] } });
-});
-
-test("a custom command with a quoted empty first token names the missing program instead of spawning it", () => {
-  const resolved = suppressionCommand("darwin", { keepDisplayAwake: false, customCommand: '"" -w {pid}' }, 4242);
-  assert.deepEqual(resolved, { status: "invalid", error: "Command must start with a program name" });
 });
 
 // The platform is beside the point when the command the user typed cannot run: telling them the

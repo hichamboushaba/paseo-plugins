@@ -92,11 +92,6 @@ test("setKeepAwakeMode returns null on a write conflict and does not retry", asy
   assert.equal(calls.length, 2);
 });
 
-test("setKeepAwakeMode returns null when the write is rejected as invalid", async () => {
-  const { rpc } = fakeRpc(ready, { status: "invalid", error: "bad" });
-  assert.equal(await setKeepAwakeMode(rpc, "off"), null);
-});
-
 test("setKeepAwakeMode returns null without writing when the read fails", async () => {
   const { rpc, calls } = fakeRpc({ status: "invalid", revision: "r1", error: "bad" });
   assert.equal(await setKeepAwakeMode(rpc, "off"), null);

@@ -1,4 +1,4 @@
-export interface Page<T> {
+interface Page<T> {
   entries: T[];
   pageInfo: { hasMore: boolean; nextCursor: string | null };
 }

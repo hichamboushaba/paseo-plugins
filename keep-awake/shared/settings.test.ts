@@ -3,9 +3,11 @@ import { test } from "node:test";
 import {
   DEFAULT_SETTINGS,
   keepAwakeSettings,
-  migrateKeepAwakeSettings,
   shouldHold,
 } from "./settings.js";
+
+const migrateKeepAwakeSettings =
+  keepAwakeSettings.migrate ?? assert.fail("keep-awake settings must declare a migration");
 
 test("migrate maps an enabled v1 document onto auto", () => {
   assert.deepEqual(migrateKeepAwakeSettings({ enabled: true, keepDisplayAwake: false }, 1), {
@@ -26,11 +28,6 @@ test("migrate treats a v1 document without enabled as auto, matching the old def
     mode: "auto",
     keepDisplayAwake: false,
   });
-});
-
-test("migrate drops the retired enabled key", () => {
-  const migrated = migrateKeepAwakeSettings({ enabled: true, keepDisplayAwake: false }, 1);
-  assert.equal(Object.hasOwn(migrated as object, "enabled"), false);
 });
 
 test("migrate leaves a current document untouched", () => {

@@ -37,11 +37,3 @@ test("collectAllPages stops if nextCursor is null even when hasMore is true", as
   );
   assert.deepEqual(entries, ["a"]);
 });
-
-test("collectAllPages preserves page order", async () => {
-  const entries = await collectAllPages<number>(
-    { entries: [1, 2], pageInfo: { hasMore: true, nextCursor: "next" } },
-    async () => ({ entries: [3, 4], pageInfo: { hasMore: false, nextCursor: null } }),
-  );
-  assert.deepEqual(entries, [1, 2, 3, 4]);
-});

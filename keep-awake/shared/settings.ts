@@ -7,7 +7,7 @@ export type KeepAwakeMode = (typeof KEEP_AWAKE_MODES)[number];
 
 // Version 1 stored `enabled: boolean`, where true meant "hold while agents work"
 // and a missing value defaulted to true.
-export function migrateKeepAwakeSettings(values: unknown, fromVersion: number): unknown {
+function migrateKeepAwakeSettings(values: unknown, fromVersion: number): unknown {
   if (fromVersion >= 2 || typeof values !== "object" || values === null || Array.isArray(values)) {
     return values;
   }

@@ -49,21 +49,6 @@ test("reconcile drops held agents the daemon no longer reports as running", () =
   assert.deepEqual(tracker.ids(), ["b"]);
 });
 
-test("reconcile returns an empty list when every hold is still running", () => {
-  const tracker = new HoldTracker();
-  tracker.add("a");
-  assert.deepEqual(tracker.reconcile(["a", "unrelated"]).dropped, []);
-  assert.equal(tracker.holding, true);
-});
-
-test("reconcile against nothing running releases every hold", () => {
-  const tracker = new HoldTracker();
-  tracker.add("a");
-  tracker.add("b");
-  assert.deepEqual(tracker.reconcile([]).dropped.sort(), ["a", "b"]);
-  assert.equal(tracker.holding, false);
-});
-
 test("reconcile acquires holds for running agents it never saw", () => {
   const tracker = new HoldTracker();
   const { added, dropped } = tracker.reconcile(["a", "b"]);

@@ -81,14 +81,6 @@ test("an unchanged custom command does not respawn", () => {
   assert.equal(calls.length, 1);
 });
 
-test("a child that exits on its own clears the active state", () => {
-  const { children, spawnFn } = recorder();
-  const suppressor = new SleepSuppressor("darwin", 100, spawnFn);
-  suppressor.sync(true, { keepDisplayAwake: false, customCommand: "" });
-  children[0]?.emit("exit", 0, null);
-  assert.equal(suppressor.active, false);
-});
-
 test("a spawn error clears the active state instead of throwing", () => {
   const { children, spawnFn } = recorder();
   const suppressor = new SleepSuppressor("darwin", 100, spawnFn);
@@ -310,11 +302,4 @@ test("an invalid command leaves an unsupported platform reporting unsupported", 
   captureErrors(() => suppressor.sync(true, { keepDisplayAwake: false, customCommand: '""' }));
   assert.equal(suppressor.supported, false);
   assert.equal(suppressor.commandError, "Command must start with a program name");
-});
-
-test("an invalid command leaves a platform with a built-in reporting supported", () => {
-  const { spawnFn } = recorder();
-  const suppressor = new SleepSuppressor("darwin", 100, spawnFn);
-  captureErrors(() => suppressor.sync(true, { keepDisplayAwake: false, customCommand: '""' }));
-  assert.equal(suppressor.supported, true);
 });

@@ -1,11 +1,11 @@
-export type CommandLineResult = { tokens: string[] } | { error: string };
+type CommandLineResult = { tokens: string[] } | { error: string };
 
-// The lexical half of parseCommandLine, which is what callers outside this module want -- this
-// answers only whether the quoting is well formed. Hand-rolled rather than reused from a
+// parseCommandLine is the entry point for callers; this is its lexical half and answers only
+// whether the quoting is well formed. Hand-rolled rather than reused from a
 // shell-parsing package: it only ever needs to understand quoting, not the rest of shell syntax
 // (globs, pipes, env vars, ...), and pulling in a real shell grammar would let users write things
 // spawning-without-a-shell can't run anyway.
-export function tokenizeCommandLine(input: string): CommandLineResult {
+function tokenizeCommandLine(input: string): CommandLineResult {
   const tokens: string[] = [];
   let current = "";
   let inToken = false;

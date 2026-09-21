@@ -1,6 +1,6 @@
 import type { PluginButtonRegistration } from "@getpaseo/plugin/client";
 
-export interface HeaderButtonHost {
+interface HeaderButtonHost {
   add(workspaceId: string): PluginButtonRegistration;
 }
 

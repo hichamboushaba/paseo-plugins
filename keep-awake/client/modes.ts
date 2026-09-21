@@ -1,6 +1,6 @@
 import type { KeepAwakeMode } from "../shared/settings.js";
 
-export interface ModePresentation {
+interface ModePresentation {
   readonly label: string;
   readonly hint: string;
   readonly icon: string;

@@ -9,8 +9,8 @@ export type SpawnFn = (
 
 const defaultSpawn: SpawnFn = (command, args, options) => spawn(command, args, options);
 
-function formatCommand(spec: SuppressionCommand): string {
-  return [spec.command, ...spec.args].join(" ");
+function sameOptions(a: SuppressionOptions, b: SuppressionOptions): boolean {
+  return a.keepDisplayAwake === b.keepDisplayAwake && a.customCommand === b.customCommand;
 }
 
 function sameCommand(a: SuppressionCommand, b: SuppressionCommand): boolean {
@@ -19,14 +19,6 @@ function sameCommand(a: SuppressionCommand, b: SuppressionCommand): boolean {
     a.args.length === b.args.length &&
     a.args.every((arg, index) => arg === b.args[index])
   );
-}
-
-function sameOptions(a: SuppressionOptions, b: SuppressionOptions): boolean {
-  return a.keepDisplayAwake === b.keepDisplayAwake && a.customCommand === b.customCommand;
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 export class SleepSuppressor {
@@ -63,7 +55,7 @@ export class SleepSuppressor {
 
   describe(options: SuppressionOptions): string | null {
     const resolution = suppressionCommand(this.platform, options, this.watchPid);
-    return resolution.status === "ok" ? formatCommand(resolution.spec) : null;
+    return resolution.status === "ok" ? [resolution.spec.command, ...resolution.spec.args].join(" ") : null;
   }
 
   sync(shouldHold: boolean, options: SuppressionOptions): void {
@@ -119,7 +111,7 @@ export class SleepSuppressor {
     try {
       child = this.spawnFn(spec.command, spec.args, { stdio: "ignore", windowsHide: true });
     } catch (error) {
-      this.lastError = `${spec.command} failed to start: ${errorMessage(error)}`;
+      this.lastError = `${spec.command} failed to start: ${error instanceof Error ? error.message : String(error)}`;
       console.error(`[keep-awake] ${this.lastError}`);
       return;
     }

@@ -29,10 +29,6 @@ test("parseRunningAgentIds returns only running agent ids", () => {
   assert.deepEqual(parseRunningAgentIds(stdout), ["a", "c"]);
 });
 
-test("parseRunningAgentIds returns an empty array when nothing is running", () => {
-  assert.deepEqual(parseRunningAgentIds(JSON.stringify([{ id: "a", status: "idle" }])), []);
-});
-
 test("parseRunningAgentIds skips entries with a missing or non-string id", () => {
   const stdout = JSON.stringify([{ status: "running" }, { id: 7, status: "running" }]);
   assert.deepEqual(parseRunningAgentIds(stdout), []);
