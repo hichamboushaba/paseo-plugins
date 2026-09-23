@@ -1,12 +1,16 @@
 export class HoldTracker {
   private readonly held = new Set<string>();
 
-  add(agentId: string): void {
+  add(agentId: string): boolean {
+    if (this.held.has(agentId)) {
+      return false;
+    }
     this.held.add(agentId);
+    return true;
   }
 
-  remove(agentId: string): void {
-    this.held.delete(agentId);
+  remove(agentId: string): boolean {
+    return this.held.delete(agentId);
   }
 
   // `skipDrops` lets a caller apply a snapshot it knows may be stale: a running agent it hasn't

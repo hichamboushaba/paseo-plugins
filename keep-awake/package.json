@@ -2,7 +2,7 @@
   "name": "paseo-keep-awake",
   "version": "0.1.0",
   "private": true,
-  "description": "Keeps the daemon host awake while any Paseo agent has a live turn running.",
+  "description": "Keeps the daemon host awake while Paseo agents and their subagents are working.",
   "keywords": [
     "paseo",
     "paseo-plugin",

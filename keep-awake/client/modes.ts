@@ -14,7 +14,7 @@ export const MODE_PRESENTATION: Record<KeepAwakeMode, ModePresentation> = {
   },
   auto: {
     label: "While an agent is working",
-    hint: "Hold from the first agent turn until the last one ends.",
+    hint: "Hold while agents or their subagents are working, and for a minute after.",
     icon: "Coffee",
   },
   always: {

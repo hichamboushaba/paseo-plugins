@@ -7,13 +7,16 @@ import type {
   PluginSettings,
   PluginSettingsState,
   PluginHookContext,
+  PluginHandlerContext,
   PluginHookAgent,
   PluginLifecycleEvents,
 } from "@getpaseo/plugin/server";
 import { keepAwakeSettings } from "./shared/settings.js";
+import { statusRpc, type KeepAwakeStatus } from "./shared/status.js";
+import type { SubagentUpdate } from "./server/subagents.js";
 import { HoldTracker } from "./server/tracker.js";
 import { SleepSuppressor, type SpawnFn } from "./server/suppressor.js";
-import contribute from "./index.server.js";
+import contribute, { RECONCILE_INTERVAL_MS, RELEASE_GRACE_MS } from "./index.server.js";
 
 // contribute() fires an unconditional startup reconcile synchronously, before a test ever gets a
 // chance to capture a fake `paseo`, and that first call always goes through this CLI fallback.
@@ -57,20 +60,48 @@ function fakeAgent(id: string): PluginHookAgent {
   return { id, workspaceId: null, parentAgentId: null, provider: "test", cwd: "/tmp/keep-awake-test", title: null };
 }
 
-function fakePaseoWithRunning(ids: string[]): PaseoApi {
+type FakeFeedObserver = { update: (message: unknown) => void; error?: (error: unknown) => void };
+
+// Fake of `observeEvents(...).subscribe(...)`: records each subscription attempt and its abort
+// signal, and lets a test push updates or fail the subscription the way the library does.
+function fakeSubagentFeed() {
+  let observer: FakeFeedObserver | null = null;
+  const feed = {
+    subscriptions: 0,
+    signal: undefined as AbortSignal | undefined,
+    observeEvents: ((_events: unknown, options?: { signal?: AbortSignal }) => {
+      feed.subscriptions++;
+      feed.signal = options?.signal;
+      return { subscribe: (next: FakeFeedObserver) => ((observer = next), () => {}) };
+    }) as unknown as PaseoApi["observeEvents"],
+    push: (payload: SubagentUpdate) => observer?.update({ type: "agent.provider_subagents.update", payload }),
+    error: (error: unknown) => observer?.error?.(error),
+  };
+  return feed;
+}
+
+function fakePaseoWithRunning(ids: string[], feed: ReturnType<typeof fakeSubagentFeed> = fakeSubagentFeed()): PaseoApi {
   const result: FakeListResult = {
     entries: ids.map((id) => ({ agent: { id } })),
     pageInfo: { hasMore: false, nextCursor: null },
   };
-  return { agents: { list: () => Promise.resolve(result) } } as never as PaseoApi;
+  return {
+    agents: { list: () => Promise.resolve(result) },
+    observeEvents: feed.observeEvents,
+  } as never as PaseoApi;
 }
 
-function fakePaseoWithDeferredList(): { paseo: PaseoApi; resolveList: (result: FakeListResult) => void } {
+function fakePaseoWithDeferredList(
+  feed: ReturnType<typeof fakeSubagentFeed> = fakeSubagentFeed(),
+): { paseo: PaseoApi; resolveList: (result: FakeListResult) => void } {
   let resolve: ((result: FakeListResult) => void) | undefined;
   const pending = new Promise<FakeListResult>((res) => {
     resolve = res;
   });
-  const paseo = { agents: { list: () => pending } } as never as PaseoApi;
+  const paseo = {
+    agents: { list: () => pending },
+    observeEvents: feed.observeEvents,
+  } as never as PaseoApi;
   return { paseo, resolveList: (result) => resolve?.(result) };
 }
 
@@ -114,13 +145,28 @@ function createFakeContext() {
     };
   };
 
+  const rpcHandlers = new Map<string, (input: unknown, context: PluginHandlerContext) => unknown>();
+  const handle: PluginServerContext["handle"] = (contract, handler) => {
+    rpcHandlers.set(contract.name, handler as never);
+  };
+
   const context: PluginServerContext = {
     registerSettings: () => settings as never,
-    handle: () => {},
+    handle,
     registerProvider: () => {},
     on,
     before: () => () => {},
   };
+
+  // Invokes a registered RPC handler directly, the way the daemon would dispatch a call from the
+  // client -- lets a test read the status RPC without a real transport.
+  async function callRpc<T>(name: string, paseo: PaseoApi, input: unknown = {}): Promise<T> {
+    const handler = rpcHandlers.get(name);
+    if (handler === undefined) {
+      throw new Error(`no handler registered for ${name}`);
+    }
+    return (await handler(input, { paseo })) as T;
+  }
 
   function emit<Name extends keyof PluginLifecycleEvents>(
     name: Name,
@@ -147,7 +193,7 @@ function createFakeContext() {
     rejectSettingsRead?.(error);
   }
 
-  return { context, emit, resolveSettings, publishSettings, rejectSettings };
+  return { context, emit, resolveSettings, publishSettings, rejectSettings, callRpc };
 }
 
 test("a stale reconcile snapshot does not drop a hold added mid-flight", async () => {
@@ -296,4 +342,183 @@ test("a settings read that rejects is caught instead of killing the plugin subpr
   }
 
   assert.deepEqual(rejections, []);
+});
+
+function turnEnded(agentId: string): PluginLifecycleEvents["agent.turn_ended"] {
+  return { agent: fakeAgent(agentId), turnId: null, outcome: { kind: "completed" }, timeline: [] };
+}
+
+test("a child turn ending and a parent turn starting 4ms later keeps the same child, released only after the last turn ends and the delay passes", async (t) => {
+  const { context, emit } = createFakeContext();
+  const tracker = new HoldTracker();
+  const { children, spawnFn } = recorder();
+  const suppressor = new SleepSuppressor("darwin", 999, spawnFn);
+  const paseo = fakePaseoWithRunning([]);
+
+  const cleanup = contribute(context, { tracker, suppressor });
+  t.after(cleanup);
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+
+  emit("agent.created", { agent: fakeAgent("bootstrap") }, paseo);
+  await flushMicrotasks();
+
+  emit("agent.turn_started", { agent: fakeAgent("child"), turnId: null }, paseo);
+  assert.equal(children.length, 1);
+
+  // This is the regression itself: the child's turn ends and the parent's turn starts 4ms
+  // later, exactly as happened live -- the same `caffeinate` must survive the hand-off.
+  emit("agent.turn_ended", turnEnded("child"), paseo);
+  assert.equal(children[0]?.killed, false);
+  t.mock.timers.tick(4);
+  emit("agent.turn_started", { agent: fakeAgent("parent"), turnId: null }, paseo);
+
+  assert.equal(children.length, 1);
+  assert.equal(children[0]?.killed, false);
+
+  // Even out past the full delay window, the still-running parent must keep the same child.
+  t.mock.timers.tick(RELEASE_GRACE_MS);
+  assert.equal(children.length, 1);
+  assert.equal(children[0]?.killed, false);
+
+  // The parent's turn ends too: nothing is left running, so the delay starts for real this time
+  // and eventually releases.
+  emit("agent.turn_ended", turnEnded("parent"), paseo);
+  assert.equal(children[0]?.killed, false);
+  t.mock.timers.tick(RELEASE_GRACE_MS);
+  assert.equal(children[0]?.killed, true);
+});
+
+test("off during the delay releases at once, and switching back to auto does not re-hold", async (t) => {
+  const { context, emit, publishSettings } = createFakeContext();
+  const tracker = new HoldTracker();
+  const { calls, children, spawnFn } = recorder();
+  const suppressor = new SleepSuppressor("darwin", 999, spawnFn);
+  const paseo = fakePaseoWithRunning([]);
+
+  const cleanup = contribute(context, { tracker, suppressor });
+  t.after(cleanup);
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+
+  emit("agent.created", { agent: fakeAgent("bootstrap") }, paseo);
+  await flushMicrotasks();
+
+  emit("agent.turn_started", { agent: fakeAgent("a"), turnId: null }, paseo);
+  emit("agent.turn_ended", turnEnded("a"), paseo);
+  assert.equal(children.length, 1);
+  assert.equal(children[0]?.killed, false);
+
+  publishSettings({ status: "ready", revision: "2", values: { mode: "off", keepDisplayAwake: false, customCommand: "" } });
+  assert.equal(children[0]?.killed, true);
+
+  publishSettings({ status: "ready", revision: "3", values: { mode: "auto", keepDisplayAwake: false, customCommand: "" } });
+  t.mock.timers.tick(RELEASE_GRACE_MS);
+  assert.equal(calls.length, 1);
+});
+
+test("a running subagent holds after the parent's turn ends; its completion, plus the delay, releases", async (t) => {
+  const { context, emit } = createFakeContext();
+  const tracker = new HoldTracker();
+  const { children, spawnFn } = recorder();
+  const suppressor = new SleepSuppressor("darwin", 999, spawnFn);
+  const feed = fakeSubagentFeed();
+  const paseo = fakePaseoWithRunning([], feed);
+
+  const cleanup = contribute(context, { tracker, suppressor });
+  t.after(cleanup);
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+
+  emit("agent.created", { agent: fakeAgent("bootstrap") }, paseo);
+  await flushMicrotasks();
+
+  emit("agent.turn_started", { agent: fakeAgent("parent"), turnId: null }, paseo);
+  assert.equal(children.length, 1);
+
+  const runningAt = new Date(Date.now()).toISOString();
+  feed.push({ kind: "upsert", subagent: { id: "sub1", parentAgentId: "parent", status: "running", updatedAt: runningAt } });
+
+  emit("agent.turn_ended", turnEnded("parent"), paseo);
+  // The subagent is still running, so the full delay elapsing must not release the hold.
+  t.mock.timers.tick(RELEASE_GRACE_MS);
+  assert.equal(children[0]?.killed, false);
+
+  const finishedAt = new Date(Date.now()).toISOString();
+  feed.push({ kind: "upsert", subagent: { id: "sub1", parentAgentId: "parent", status: "completed", updatedAt: finishedAt } });
+  assert.equal(children[0]?.killed, false);
+
+  t.mock.timers.tick(RELEASE_GRACE_MS);
+  assert.equal(children[0]?.killed, true);
+});
+
+test("the feed subscribes once, re-subscribes after an error, and cleanup aborts the signal", async (t) => {
+  const { context, emit } = createFakeContext();
+  const tracker = new HoldTracker();
+  const { spawnFn } = recorder();
+  const suppressor = new SleepSuppressor("darwin", 999, spawnFn);
+  const feed = fakeSubagentFeed();
+  const paseo = fakePaseoWithRunning([], feed);
+
+  // This test drives the reconcile interval itself, so setInterval must be mocked too -- and
+  // therefore enabled before contribute() runs, unlike every other test here, so that the
+  // interval contribute() creates is the mocked one tick() can advance.
+  t.mock.timers.enable({ apis: ["setTimeout", "setInterval", "Date"] });
+  const cleanup = contribute(context, { tracker, suppressor });
+  t.after(cleanup);
+
+  emit("agent.created", { agent: fakeAgent("bootstrap") }, paseo);
+  await flushMicrotasks();
+  assert.equal(feed.subscriptions, 1);
+
+  emit("agent.turn_started", { agent: fakeAgent("a"), turnId: null }, paseo);
+  emit("agent.turn_ended", turnEnded("a"), paseo);
+  assert.equal(feed.subscriptions, 1);
+
+  // The library calls error() itself and releases the handle on a failed request.
+  feed.error(new Error("relay disconnected"));
+
+  t.mock.timers.tick(RECONCILE_INTERVAL_MS);
+  await flushMicrotasks();
+  assert.equal(feed.subscriptions, 2);
+
+  assert.equal(feed.signal?.aborted, false);
+  cleanup();
+  assert.equal(feed.signal?.aborted, true);
+});
+
+test("status holdReason reflects agents, subagents, and the release countdown", async (t) => {
+  const { context, emit, callRpc, publishSettings } = createFakeContext();
+  const tracker = new HoldTracker();
+  const { spawnFn } = recorder();
+  const suppressor = new SleepSuppressor("darwin", 999, spawnFn);
+  const feed = fakeSubagentFeed();
+  const paseo = fakePaseoWithRunning([], feed);
+
+  const cleanup = contribute(context, { tracker, suppressor });
+  t.after(cleanup);
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+
+  emit("agent.created", { agent: fakeAgent("bootstrap") }, paseo);
+  await flushMicrotasks();
+
+  emit("agent.turn_started", { agent: fakeAgent("a"), turnId: null }, paseo);
+  let status = await callRpc<KeepAwakeStatus>(statusRpc.name, paseo);
+  assert.equal(status.holdReason, "1 agent");
+
+  const runningAt = new Date(Date.now()).toISOString();
+  feed.push({ kind: "upsert", subagent: { id: "sub1", parentAgentId: "a", status: "running", updatedAt: runningAt } });
+  status = await callRpc<KeepAwakeStatus>(statusRpc.name, paseo);
+  assert.equal(status.holdReason, "1 agent, 1 subagent");
+
+  emit("agent.turn_ended", turnEnded("a"), paseo);
+  const finishedAt = new Date(Date.now()).toISOString();
+  feed.push({ kind: "upsert", subagent: { id: "sub1", parentAgentId: "a", status: "completed", updatedAt: finishedAt } });
+  status = await callRpc<KeepAwakeStatus>(statusRpc.name, paseo);
+  assert.equal(status.holdReason, "releasing in 60 s");
+
+  t.mock.timers.tick(15_000);
+  status = await callRpc<KeepAwakeStatus>(statusRpc.name, paseo);
+  assert.equal(status.holdReason, "releasing in 45 s");
+
+  publishSettings({ status: "ready", revision: "2", values: { mode: "off", keepDisplayAwake: false, customCommand: "" } });
+  status = await callRpc<KeepAwakeStatus>(statusRpc.name, paseo);
+  assert.equal(status.holdReason, null);
 });

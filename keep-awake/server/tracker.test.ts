@@ -17,8 +17,8 @@ test("adding an agent starts holding", () => {
 
 test("adding the same agent twice is not a second hold", () => {
   const tracker = new HoldTracker();
-  tracker.add("a");
-  tracker.add("a");
+  assert.equal(tracker.add("a"), true);
+  assert.equal(tracker.add("a"), false);
   tracker.remove("a");
   assert.equal(tracker.holding, false);
 });
@@ -27,7 +27,7 @@ test("holding continues while any other agent is still running", () => {
   const tracker = new HoldTracker();
   tracker.add("a");
   tracker.add("b");
-  tracker.remove("a");
+  assert.equal(tracker.remove("a"), true);
   assert.equal(tracker.holding, true);
   tracker.remove("b");
   assert.equal(tracker.holding, false);
@@ -36,7 +36,7 @@ test("holding continues while any other agent is still running", () => {
 test("removing an unknown agent is a no-op", () => {
   const tracker = new HoldTracker();
   tracker.add("a");
-  tracker.remove("ghost");
+  assert.equal(tracker.remove("ghost"), false);
   assert.equal(tracker.holding, true);
 });
 

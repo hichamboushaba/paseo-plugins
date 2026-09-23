@@ -1,5 +1,5 @@
 {
   "id": "keep-awake",
-  "description": "Keeps the daemon host awake while any Paseo agent has a live turn running.",
+  "description": "Keeps the daemon host awake while Paseo agents and their subagents are working.",
   "requirements": { "paseo": ">=0.9.0-beta.2" }
 }

@@ -18,22 +18,13 @@ import {
   type KeepAwakeMode,
   type KeepAwakeSettings as KeepAwakeValues,
 } from "../shared/settings.js";
-import { statusRpc } from "../shared/status.js";
+import { statusRpc, type KeepAwakeStatus } from "../shared/status.js";
 import { MODE_PRESENTATION } from "./modes.js";
-
-type Status = {
-  platform: string;
-  supported: boolean;
-  holding: boolean;
-  heldBy: string[];
-  command: string | null;
-  commandError: string | null;
-};
 
 export function KeepAwakeSettingsScreen({ theme, layout }: PluginSurfaceProps) {
   const settings = useSettings(keepAwakeSettings);
   const readStatus = useRpc(statusRpc);
-  const [status, setStatus] = useState<Status | null>(null);
+  const [status, setStatus] = useState<KeepAwakeStatus | null>(null);
   const [draftCommand, setDraftCommand] = useState<string | null>(null);
   const commandInputRef = useRef<SettingsInputHandle>(null);
 
@@ -183,9 +174,11 @@ export function KeepAwakeSettingsScreen({ theme, layout }: PluginSurfaceProps) {
             <Text style={styles.detail}>
               {status === null
                 ? "…"
-                : status.holding
-                  ? `Yes — ${status.heldBy.length} agent${status.heldBy.length === 1 ? "" : "s"}`
-                  : "No"}
+                : !status.holding
+                  ? "No"
+                  : status.holdReason === null
+                    ? "Yes"
+                    : `Yes — ${status.holdReason}`}
             </Text>
           </SettingsRow>
           {status !== null && !status.supported ? (

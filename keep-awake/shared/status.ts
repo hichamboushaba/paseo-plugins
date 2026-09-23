@@ -1,4 +1,4 @@
-import { defineRpc } from "@getpaseo/plugin";
+import { defineRpc, type RpcOutput } from "@getpaseo/plugin";
 import { z } from "zod";
 
 export const statusRpc = defineRpc({
@@ -9,7 +9,10 @@ export const statusRpc = defineRpc({
     supported: z.boolean(),
     holding: z.boolean(),
     heldBy: z.array(z.string()),
+    holdReason: z.string().nullable(),
     command: z.string().nullable(),
     commandError: z.string().nullable(),
   }),
 });
+
+export type KeepAwakeStatus = RpcOutput<typeof statusRpc>;

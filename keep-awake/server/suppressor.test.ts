@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { EventEmitter } from "node:events";
-import { SleepSuppressor, type SpawnFn } from "./suppressor.js";
+import { SleepSuppressor, HANDOVER_MS, type SpawnFn } from "./suppressor.js";
 
 class FakeChild extends EventEmitter {
   killed = false;
@@ -53,24 +53,110 @@ test("sync(false) on an idle suppressor does nothing", () => {
   assert.equal(suppressor.active, false);
 });
 
-test("changing options restarts the child with the new command", () => {
+test("changing options overlaps the old child until the handover completes", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
   const { calls, children, spawnFn } = recorder();
   const suppressor = new SleepSuppressor("darwin", 100, spawnFn);
   suppressor.sync(true, { keepDisplayAwake: false, customCommand: "" });
   suppressor.sync(true, { keepDisplayAwake: true, customCommand: "" });
   assert.equal(calls.length, 2);
-  assert.equal(children[0]?.killed, true);
+  assert.equal(children[0]?.killed, false);
   assert.ok(calls[1]?.args.includes("-d"));
+  t.mock.timers.tick(HANDOVER_MS);
+  assert.equal(children[0]?.killed, true);
 });
 
-test("changing the custom command respawns even though keepDisplayAwake is unchanged", () => {
+test("changing the custom command overlaps the old child until the handover completes", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
   const { calls, children, spawnFn } = recorder();
   const suppressor = new SleepSuppressor("darwin", 100, spawnFn);
   suppressor.sync(true, { keepDisplayAwake: false, customCommand: "echo one" });
   suppressor.sync(true, { keepDisplayAwake: false, customCommand: "echo two" });
   assert.equal(calls.length, 2);
-  assert.equal(children[0]?.killed, true);
+  assert.equal(children[0]?.killed, false);
   assert.deepEqual(calls[1], { command: "echo", args: ["two"] });
+  t.mock.timers.tick(HANDOVER_MS);
+  assert.equal(children[0]?.killed, true);
+});
+
+test("stop() during the overlap kills the retiring child at once", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const { children, spawnFn } = recorder();
+  const suppressor = new SleepSuppressor("darwin", 100, spawnFn);
+  suppressor.sync(true, { keepDisplayAwake: false, customCommand: "echo one" });
+  suppressor.sync(true, { keepDisplayAwake: false, customCommand: "echo two" });
+  suppressor.stop();
+  assert.equal(children[0]?.killed, true);
+});
+
+test("a deferred release counts down and kills once it elapses, without a repeat extending it", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const { children, spawnFn } = recorder();
+  const suppressor = new SleepSuppressor("darwin", 100, spawnFn);
+  const options = { keepDisplayAwake: false, customCommand: "" };
+  suppressor.sync(true, options);
+  suppressor.sync(false, options, 60_000);
+  assert.equal(children[0]?.killed, false);
+  assert.equal(suppressor.releaseInMs, 60_000);
+
+  t.mock.timers.tick(30_000);
+  assert.equal(suppressor.releaseInMs, 30_000);
+
+  // A repeated release at the same delay must not push the deadline back out.
+  suppressor.sync(false, options, 60_000);
+  assert.equal(suppressor.releaseInMs, 30_000);
+
+  t.mock.timers.tick(30_000);
+  assert.equal(children[0]?.killed, true);
+  assert.equal(suppressor.active, false);
+  assert.equal(suppressor.releaseInMs, null);
+});
+
+test("holding again during a deferred release keeps the same child", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const { calls, children, spawnFn } = recorder();
+  const suppressor = new SleepSuppressor("darwin", 100, spawnFn);
+  const options = { keepDisplayAwake: false, customCommand: "" };
+  suppressor.sync(true, options);
+  suppressor.sync(false, options, 60_000);
+  suppressor.sync(true, options);
+  assert.equal(calls.length, 1);
+  assert.equal(suppressor.releaseInMs, null);
+
+  t.mock.timers.tick(60_000);
+  assert.equal(children[0]?.killed, false);
+  assert.equal(suppressor.active, true);
+});
+
+test("an immediate release during a pending deferred release kills at once", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const { children, spawnFn } = recorder();
+  const suppressor = new SleepSuppressor("darwin", 100, spawnFn);
+  const options = { keepDisplayAwake: false, customCommand: "" };
+  suppressor.sync(true, options);
+  suppressor.sync(false, options, 60_000);
+  suppressor.sync(false, options);
+  assert.equal(children[0]?.killed, true);
+  assert.equal(suppressor.active, false);
+  assert.equal(suppressor.releaseInMs, null);
+});
+
+test("a synchronous spawn throw kills the old child at once", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const { children, spawnFn: workingSpawn } = recorder();
+  let shouldThrow = false;
+  const spawnFn: SpawnFn = (command, args, options) => {
+    if (shouldThrow) {
+      throw new Error("ERR_INVALID_ARG_VALUE");
+    }
+    return workingSpawn(command, args, options);
+  };
+  const suppressor = new SleepSuppressor("darwin", 100, spawnFn);
+  suppressor.sync(true, { keepDisplayAwake: false, customCommand: "echo one" });
+  shouldThrow = true;
+  captureErrors(() => suppressor.sync(true, { keepDisplayAwake: false, customCommand: "echo two" }));
+  assert.equal(children[0]?.killed, true);
+  assert.equal(suppressor.active, false);
 });
 
 test("an unchanged custom command does not respawn", () => {
