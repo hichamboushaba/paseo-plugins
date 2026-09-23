@@ -1,6 +1,6 @@
 {
   "name": "paseo-keep-awake",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Keeps the daemon host awake while Paseo agents and their subagents are working.",
   "keywords": [
