@@ -1,0 +1,62 @@
+# Publishes a plugin to npm when a `<plugin>/v<version>` tag is pushed, e.g. `keep-awake/v0.1.1`.
+#
+# Authentication is npm trusted publishing (OIDC). npm trusts this workflow by its filename, so
+# renaming this file breaks publishing until each package's trusted publisher is updated. npm can
+# only attach a trusted publisher to a package that already exists, so a brand-new package's first
+# publish falls back to an NPM_TOKEN repository secret; delete it once trusted publishing is set up.
+name: Publish to npm
+
+on:
+  push:
+    tags: ["*/v*"]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Resolve the plugin from the tag
+        id: tag
+        run: |
+          set -euo pipefail
+          plugin="${GITHUB_REF_NAME%%/v*}"
+          version="${GITHUB_REF_NAME#*/v}"
+          if [ ! -f "$plugin/paseo-plugin.json" ]; then
+            echo "::error::'$plugin' is not a plugin directory in this repository"
+            exit 1
+          fi
+          declared="$(node -p "require('./$plugin/package.json').version")"
+          if [ "$declared" != "$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match $plugin/package.json version $declared"
+            exit 1
+          fi
+          echo "plugin=$plugin" >> "$GITHUB_OUTPUT"
+
+      # Trusted publishing needs npm 11.5.1 or newer.
+      - run: npm install -g npm@latest
+
+      - name: Install, typecheck, and test
+        working-directory: ${{ steps.tag.outputs.plugin }}
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
+
+      - name: Publish
+        working-directory: ${{ steps.tag.outputs.plugin }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance
