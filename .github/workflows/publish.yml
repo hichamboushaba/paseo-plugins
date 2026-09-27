@@ -1,9 +1,10 @@
 # Publishes a plugin to npm when a `<plugin>/v<version>` tag is pushed, e.g. `keep-awake/v0.1.1`.
 #
-# Authentication is npm trusted publishing (OIDC). npm trusts this workflow by its filename, so
-# renaming this file breaks publishing until each package's trusted publisher is updated. npm can
-# only attach a trusted publisher to a package that already exists, so a brand-new package's first
-# publish falls back to an NPM_TOKEN repository secret; delete it once trusted publishing is set up.
+# Authentication is npm trusted publishing (OIDC), so no npm token is stored anywhere. npm trusts
+# this workflow by its filename: renaming this file breaks publishing until each package's trusted
+# publisher is updated. npm can only attach a trusted publisher to a package that already exists,
+# so a new plugin's first version must be published once some other way (for example by hand, with
+# 2FA) before its tags can publish from here.
 name: Publish to npm
 
 on:
@@ -57,7 +58,5 @@ jobs:
 
       - name: Publish
         working-directory: ${{ steps.tag.outputs.plugin }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        # A new package's first publish with provenance must state its access explicitly.
+        # npm rejects provenance on a package's first publish unless access is stated explicitly.
         run: npm publish --provenance --access public
