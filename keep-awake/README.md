@@ -58,10 +58,10 @@ The screen shows the daemon platform, whether a hold is active, how many agents 
 | Daemon platform | Built-in mechanism | Display option | Tested |
 | --- | --- | --- | --- |
 | macOS | `caffeinate -i -m [-d] -w <plugin pid>` | Supported with `-d` | macOS 26, Paseo 0.9.1 |
-| Linux | `systemd-inhibit --what=idle --mode=block`, plus `gnome-session-inhibit --inhibit suspend` in a GNOME session | Not supported | Argument-level tests only |
+| Linux | `systemd-inhibit --what=idle --mode=block`, plus `gnome-session-inhibit --inhibit suspend` in a GNOME session | Not supported | Fedora 44 (GNOME 50), Paseo 0.9.1 |
 | Windows | PowerShell `SetThreadExecutionState` | Supported with `ES_DISPLAY_REQUIRED` | Argument-level tests only |
 
-Linux requires systemd. Its idle lock is what logind's own idle suspend and KDE honor, but GNOME's auto-suspend ignores it, so in a GNOME session the plugin also takes a gnome-session inhibitor. Either lock may be unavailable; the hold lasts while at least one is held. An unsupported platform still loads the plugin and tracks turns, but it does not spawn a hold unless you provide a custom command.
+Linux requires systemd. Its idle lock is what logind's own idle suspend and KDE honor, but GNOME's auto-suspend ignores it, so in a GNOME session the plugin also takes a gnome-session inhibitor. Either lock may be unavailable; the hold lasts while at least one is held. If neither can be taken, for example on a host without systemd and outside GNOME, the hold ends at once and the settings screen reports that `sh` exited on its own. An unsupported platform still loads the plugin and tracks turns, but it does not spawn a hold unless you provide a custom command.
 
 ## Custom command
 

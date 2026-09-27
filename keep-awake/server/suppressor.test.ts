@@ -65,6 +65,17 @@ test("releasing a hold signals the child's whole process group", (t) => {
   assert.equal(child.killed, false);
 });
 
+test("a process group that can't be signalled falls back to killing the child", (t) => {
+  t.mock.method(process, "kill", () => {
+    throw Object.assign(new Error("kill ESRCH"), { code: "ESRCH" });
+  });
+  const child = Object.assign(new FakeChild(), { pid: 4321 });
+  const suppressor = new SleepSuppressor("linux", 100, () => child as never);
+  suppressor.sync(true, { keepDisplayAwake: false, customCommand: "" });
+  suppressor.sync(false, { keepDisplayAwake: false, customCommand: "" });
+  assert.deepEqual(child.signals, ["SIGTERM"]);
+});
+
 test("sync(false) on an idle suppressor does nothing", () => {
   const { calls, spawnFn } = recorder();
   const suppressor = new SleepSuppressor("darwin", 100, spawnFn);

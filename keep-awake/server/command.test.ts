@@ -30,8 +30,8 @@ test("linux holds a logind idle lock and a GNOME suspend inhibitor until the plu
   assert.deepEqual(lines, [
     ': "${DBUS_SESSION_BUS_ADDRESS:=unix:path=/run/user/$(id -u)/bus}"',
     "export DBUS_SESSION_BUS_ADDRESS",
-    "systemd-inhibit --what=idle --who=paseo-keep-awake --why='A Paseo agent is working' --mode=block tail --pid=4242 -f /dev/null &",
-    "gnome-session-inhibit --inhibit suspend --app-id paseo-keep-awake --reason 'A Paseo agent is working' tail --pid=4242 -f /dev/null &",
+    "systemd-inhibit --what=idle --who='paseo-keep-awake' --why='A Paseo agent is working' --mode=block tail --pid=4242 -f /dev/null &",
+    "gnome-session-inhibit --inhibit suspend --app-id 'paseo-keep-awake' --reason 'A Paseo agent is working' tail --pid=4242 -f /dev/null &",
     "wait",
   ]);
 });

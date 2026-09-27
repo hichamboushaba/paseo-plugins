@@ -154,7 +154,7 @@ export class SleepSuppressor {
         process.kill(-child.pid, "SIGTERM");
         return;
       } catch {
-        // The group is already gone; fall through to the plain kill, which is then a no-op.
+        // The group is gone (ESRCH) or can't be signalled; killing the leader directly is a safe fallback.
       }
     }
     child.kill("SIGTERM");

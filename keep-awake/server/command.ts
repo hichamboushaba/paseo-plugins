@@ -85,10 +85,15 @@ function linuxScript(watchPid: number): string {
     // A daemon started over SSH or as a service may lack the address of the user's session bus.
     `: "\${DBUS_SESSION_BUS_ADDRESS:=unix:path=/run/user/$(id -u)/bus}"`,
     "export DBUS_SESSION_BUS_ADDRESS",
-    `systemd-inhibit --what=idle --who=${WHO} --why='${WHY}' --mode=block ${untilPluginExits} &`,
-    `gnome-session-inhibit --inhibit suspend --app-id ${WHO} --reason '${WHY}' ${untilPluginExits} &`,
+    `systemd-inhibit --what=idle --who=${shellQuote(WHO)} --why=${shellQuote(WHY)} --mode=block ${untilPluginExits} &`,
+    `gnome-session-inhibit --inhibit suspend --app-id ${shellQuote(WHO)} --reason ${shellQuote(WHY)} ${untilPluginExits} &`,
     "wait",
   ].join("\n");
+}
+
+// Single-quotes a value for the script above, so a quote inside it can't end the argument early.
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 function windowsScript(options: SuppressionOptions, watchPid: number): string {
