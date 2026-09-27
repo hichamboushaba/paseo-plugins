@@ -1,5 +1,4 @@
-import type { PaseoApi } from "@getpaseo/client";
-import type { PluginServerContext } from "@getpaseo/plugin/server";
+import type { PluginHookContext, PluginServerContext } from "@getpaseo/plugin/server";
 import { listRunningAgentIdsViaCli } from "./server/cli-agents.js";
 import { applySubagentUpdate } from "./server/subagents.js";
 import { SleepSuppressor } from "./server/suppressor.js";
@@ -10,6 +9,11 @@ import { statusRpc } from "./shared/status.js";
 export const RECONCILE_INTERVAL_MS = 60_000;
 export const RELEASE_GRACE_MS = 60_000;
 const PAGE_LIMIT = 200;
+
+// Paseo's plugin build resolves even type-only imports, and the daemon supplies @getpaseo/plugin but
+// not @getpaseo/client -- an npm install has no devDependencies to fall back on -- so take the API
+// type from the hook context instead of importing it.
+type PaseoApi = PluginHookContext["paseo"];
 
 export default function contribute(
   server: PluginServerContext,
