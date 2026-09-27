@@ -1,7 +1,6 @@
 {
   "name": "paseo-keep-awake",
   "version": "0.1.1",
-  "private": true,
   "description": "Keeps the daemon host awake while Paseo agents and their subagents are working.",
   "keywords": [
     "paseo",
@@ -13,6 +12,11 @@
   ],
   "author": "Hicham Boushaba",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hichamboushaba/paseo-plugins.git",
+    "directory": "keep-awake"
+  },
   "type": "module",
   "files": [
     "paseo-plugin.json",
@@ -21,7 +25,7 @@
     "client/",
     "server/",
     "shared/",
-    "assets/",
+    "images/",
     "!**/*.test.ts",
     "LICENSE",
     "README.md"

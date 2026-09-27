@@ -6,11 +6,17 @@ Requires Paseo `>=0.9.0-beta.2`.
 
 ## Install
 
-Install the plugin directly from this repository:
+Install the published package from npm:
+
+```bash
+paseo plugin install npm:paseo-keep-awake
+paseo plugin ls keep-awake
+```
+
+Or install straight from this repository:
 
 ```bash
 paseo plugin install github:hichamboushaba/paseo-plugins:keep-awake
-paseo plugin ls keep-awake
 ```
 
 For local development, install the directory instead:
@@ -31,7 +37,7 @@ Paseo plugins are trusted code. The client contribution runs in the app; the ser
 
 Every workspace gets a mode button in its header. The icon reflects the current mode, and pressing it opens all three choices plus the display option. It opens a menu rather than cycling: with three states, a cycling button makes you guess where the next press will land.
 
-![Keep Awake controls in the workspace header](assets/workspace-menu.png)
+![Keep Awake controls in the workspace header](images/workspace-menu.png)
 
 | Mode | Behaviour |
 | --- | --- |
@@ -43,7 +49,7 @@ The Command Center exposes the same controls as four explicit actions: one opens
 
 Open **Settings → Plugins → keep-awake → ··· → Settings** for the full configuration and live status:
 
-![Keep Awake settings and live status](assets/settings.png)
+![Keep Awake settings and live status](images/settings.png)
 
 The screen shows the daemon platform, whether a hold is active, how many agents and subagents currently require it (or a countdown to release once none do), and the exact command being used.
 
@@ -51,7 +57,7 @@ The screen shows the daemon platform, whether a hold is active, how many agents 
 
 | Daemon platform | Built-in mechanism | Display option | Tested |
 | --- | --- | --- | --- |
-| macOS | `caffeinate -i -m [-d] -w <plugin pid>` | Supported with `-d` | macOS 26, Paseo 0.9.0-beta.2 |
+| macOS | `caffeinate -i -m [-d] -w <plugin pid>` | Supported with `-d` | macOS 26, Paseo 0.9.1 |
 | Linux | `systemd-inhibit --what=idle --mode=block` | Idle inhibition normally defers screen blanking | Argument-level tests only |
 | Windows | PowerShell `SetThreadExecutionState` | Supported with `ES_DISPLAY_REQUIRED` | Argument-level tests only |
 
@@ -118,6 +124,17 @@ npm test
 ```
 
 Both checks must pass before installing or reloading the plugin.
+
+### Releasing
+
+Bump `version` in `package.json`, commit, and push `main`. Then push a tag that matches the new version:
+
+```bash
+git tag keep-awake/v0.1.2
+git push origin keep-awake/v0.1.2
+```
+
+The tag starts the repository's publish workflow, which checks the tag against `package.json`, runs the checks above, and publishes the package to npm.
 
 ## License
 
