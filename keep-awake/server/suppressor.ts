@@ -4,7 +4,7 @@ import { suppressionCommand, type SuppressionCommand, type SuppressionOptions } 
 export type SpawnFn = (
   command: string,
   args: string[],
-  options: { stdio: "ignore"; windowsHide: boolean },
+  options: { stdio: "ignore"; windowsHide: boolean; detached: boolean },
 ) => ChildProcess;
 
 const defaultSpawn: SpawnFn = (command, args, options) => spawn(command, args, options);
@@ -127,7 +127,7 @@ export class SleepSuppressor {
     } else {
       // The replacement failed to spawn synchronously -- nothing is watching the old command
       // anymore, so there is nothing left to overlap with. Drop it immediately.
-      outgoing.kill("SIGTERM");
+      this.terminate(outgoing);
     }
   }
 
@@ -136,11 +136,28 @@ export class SleepSuppressor {
     const child = this.child;
     this.child = null;
     this.activeCommand = null;
-    child?.kill("SIGTERM");
+    if (child !== null) {
+      this.terminate(child);
+    }
     for (const retiringChild of this.retiring) {
-      retiringChild.kill("SIGTERM");
+      this.terminate(retiringChild);
     }
     this.retiring.clear();
+  }
+
+  // A hold can be a tree of processes (the Linux one is a shell running two inhibitors), and
+  // signalling only the root would orphan the rest with their locks still held. Children therefore
+  // lead their own process group (see start()), and the whole group is signalled.
+  private terminate(child: ChildProcess): void {
+    if (this.platform !== "win32" && child.pid !== undefined) {
+      try {
+        process.kill(-child.pid, "SIGTERM");
+        return;
+      } catch {
+        // The group is already gone; fall through to the plain kill, which is then a no-op.
+      }
+    }
+    child.kill("SIGTERM");
   }
 
   // A hand-off between agent turns can leave no live work for a few milliseconds -- long enough for
@@ -174,7 +191,7 @@ export class SleepSuppressor {
     this.retiring.add(child);
     const timer = setTimeout(() => {
       this.retiring.delete(child);
-      child.kill("SIGTERM");
+      this.terminate(child);
     }, HANDOVER_MS);
     timer.unref();
   }
@@ -185,7 +202,11 @@ export class SleepSuppressor {
     this.lastError = null;
     let child: ChildProcess;
     try {
-      child = this.spawnFn(spec.command, spec.args, { stdio: "ignore", windowsHide: true });
+      child = this.spawnFn(spec.command, spec.args, {
+        stdio: "ignore",
+        windowsHide: true,
+        detached: this.platform !== "win32",
+      });
     } catch (error) {
       this.lastError = `${spec.command} failed to start: ${error instanceof Error ? error.message : String(error)}`;
       console.error(`[keep-awake] ${this.lastError}`);

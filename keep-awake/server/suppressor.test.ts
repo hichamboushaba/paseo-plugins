@@ -45,6 +45,26 @@ test("sync(false) kills the child", () => {
   assert.equal(suppressor.active, false);
 });
 
+test("releasing a hold signals the child's whole process group", (t) => {
+  const kills: [number, string | number | undefined][] = [];
+  t.mock.method(process, "kill", (pid: number, signal?: string | number) => {
+    kills.push([pid, signal]);
+    return true as const;
+  });
+  const spawnOptions: { detached: boolean }[] = [];
+  const child = Object.assign(new FakeChild(), { pid: 4321 });
+  const spawnFn: SpawnFn = (_command, _args, options) => {
+    spawnOptions.push(options);
+    return child as never;
+  };
+  const suppressor = new SleepSuppressor("linux", 100, spawnFn);
+  suppressor.sync(true, { keepDisplayAwake: false, customCommand: "" });
+  suppressor.sync(false, { keepDisplayAwake: false, customCommand: "" });
+  assert.equal(spawnOptions[0]?.detached, true);
+  assert.deepEqual(kills, [[-4321, "SIGTERM"]]);
+  assert.equal(child.killed, false);
+});
+
 test("sync(false) on an idle suppressor does nothing", () => {
   const { calls, spawnFn } = recorder();
   const suppressor = new SleepSuppressor("darwin", 100, spawnFn);

@@ -43,21 +43,7 @@ export function suppressionCommand(
       return { status: "ok", spec: { command: "caffeinate", args } };
     }
     case "linux":
-      return {
-        status: "ok",
-        spec: {
-          command: "systemd-inhibit",
-          args: [
-            "--what=idle",
-            `--who=${WHO}`,
-            `--why=${WHY}`,
-            "--mode=block",
-            "sh",
-            "-c",
-            `while kill -0 ${watchPid} 2>/dev/null; do sleep 5; done`,
-          ],
-        },
-      };
+      return { status: "ok", spec: { command: "sh", args: ["-c", linuxScript(watchPid)] } };
     case "win32":
       return {
         status: "ok",
@@ -87,6 +73,22 @@ function customSuppressionCommand(
   }
   const [command, ...args] = substitutePid(parsed.tokens, watchPid);
   return { status: "ok", spec: { command, args } };
+}
+
+// Two best-effort locks, each held until the plugin exits. GNOME's power daemon honors only
+// gnome-session inhibitors and ignores logind locks, while logind's idle lock is what logind's own
+// IdleAction and KDE honor, and the only one an ordinary user can take headless. Either may be
+// unavailable; the hold lasts while at least one of them runs.
+function linuxScript(watchPid: number): string {
+  const untilPluginExits = `tail --pid=${watchPid} -f /dev/null`;
+  return [
+    // A daemon started over SSH or as a service may lack the address of the user's session bus.
+    `: "\${DBUS_SESSION_BUS_ADDRESS:=unix:path=/run/user/$(id -u)/bus}"`,
+    "export DBUS_SESSION_BUS_ADDRESS",
+    `systemd-inhibit --what=idle --who=${WHO} --why='${WHY}' --mode=block ${untilPluginExits} &`,
+    `gnome-session-inhibit --inhibit suspend --app-id ${WHO} --reason '${WHY}' ${untilPluginExits} &`,
+    "wait",
+  ].join("\n");
 }
 
 function windowsScript(options: SuppressionOptions, watchPid: number): string {

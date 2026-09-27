@@ -22,20 +22,21 @@ test("darwin adds the display assertion when asked", () => {
   });
 });
 
-test("linux blocks idle and polls the plugin pid", () => {
+test("linux holds a logind idle lock and a GNOME suspend inhibitor until the plugin exits", () => {
   const linux = spec(suppressionCommand("linux", { keepDisplayAwake: false, customCommand: "" }, 4242));
-  assert.equal(linux.command, "systemd-inhibit");
-  assert.deepEqual(linux.args.slice(0, 4), [
-    "--what=idle",
-    "--who=paseo-keep-awake",
-    "--why=A Paseo agent is working",
-    "--mode=block",
+  assert.equal(linux.command, "sh");
+  assert.equal(linux.args[0], "-c");
+  const lines = (linux.args[1] ?? "").split("\n");
+  assert.deepEqual(lines, [
+    ': "${DBUS_SESSION_BUS_ADDRESS:=unix:path=/run/user/$(id -u)/bus}"',
+    "export DBUS_SESSION_BUS_ADDRESS",
+    "systemd-inhibit --what=idle --who=paseo-keep-awake --why='A Paseo agent is working' --mode=block tail --pid=4242 -f /dev/null &",
+    "gnome-session-inhibit --inhibit suspend --app-id paseo-keep-awake --reason 'A Paseo agent is working' tail --pid=4242 -f /dev/null &",
+    "wait",
   ]);
-  assert.deepEqual(linux.args.slice(4, 6), ["sh", "-c"]);
-  assert.match(linux.args[6] ?? "", /kill -0 4242/);
 });
 
-test("linux ignores keepDisplayAwake because systemd-inhibit has no display scope", () => {
+test("linux ignores keepDisplayAwake because neither lock has a display scope", () => {
   const off = suppressionCommand("linux", { keepDisplayAwake: false, customCommand: "" }, 7);
   const on = suppressionCommand("linux", { keepDisplayAwake: true, customCommand: "" }, 7);
   assert.deepEqual(off, on);

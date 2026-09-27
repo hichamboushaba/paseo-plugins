@@ -58,10 +58,10 @@ The screen shows the daemon platform, whether a hold is active, how many agents 
 | Daemon platform | Built-in mechanism | Display option | Tested |
 | --- | --- | --- | --- |
 | macOS | `caffeinate -i -m [-d] -w <plugin pid>` | Supported with `-d` | macOS 26, Paseo 0.9.1 |
-| Linux | `systemd-inhibit --what=idle --mode=block` | Idle inhibition normally defers screen blanking | Argument-level tests only |
+| Linux | `systemd-inhibit --what=idle --mode=block`, plus `gnome-session-inhibit --inhibit suspend` in a GNOME session | Not supported | Argument-level tests only |
 | Windows | PowerShell `SetThreadExecutionState` | Supported with `ES_DISPLAY_REQUIRED` | Argument-level tests only |
 
-Linux requires systemd. An unsupported platform still loads the plugin and tracks turns, but it does not spawn a hold unless you provide a custom command.
+Linux requires systemd. Its idle lock is what logind's own idle suspend and KDE honor, but GNOME's auto-suspend ignores it, so in a GNOME session the plugin also takes a gnome-session inhibitor. Either lock may be unavailable; the hold lasts while at least one is held. An unsupported platform still loads the plugin and tracks turns, but it does not spawn a hold unless you provide a custom command.
 
 ## Custom command
 
@@ -81,13 +81,15 @@ caffeinate -i -m -w {pid}
 
 The placeholder is optional, but omitting it means the command has no way to notice that the plugin disappeared. A command that forks and exits immediately is also unsuitable; the settings screen reports that early exit as a command error.
 
+On Linux, to block every kind of suspend while agents work, including manual suspend, use `systemd-inhibit --what=idle:sleep --mode=block tail --pid={pid} -f /dev/null`. Unlike the built-in hold, it needs a local session (or a polkit rule) to take the lock.
+
 Changing the command, or toggling **Keep the display on too**, while a hold is active carries the hold over to the new command, as long as it starts: the plugin starts the new instance first and stops the old one 10 seconds later, once the new one has had time to start. If the new command fails to start, the hold ends with the old instance and the settings screen shows the error. Expect two instances of the command to overlap briefly whenever the change succeeds.
 
 While a custom command is set, **Keep the display on too** is disabled because there is no built-in command left for that option to modify. Clear the field and apply, or press **Reset**, to restore the platform default.
 
 ## How it stays correct
 
-The server contribution listens for `agent.turn_started` and `agent.turn_ended`, tracks active agents by ID, and owns one sleep-suppression child process (briefly two while the command changes). Every built-in child watches the plugin PID as well as the plugin watching the child, so either side disappearing releases the operating-system assertion.
+The server contribution listens for `agent.turn_started` and `agent.turn_ended`, tracks active agents by ID, and owns one sleep-suppression child process (briefly two while the command changes). A hold can be a small process tree (on Linux, a shell running two inhibitors), so releasing it signals the child's whole process group. Every built-in child watches the plugin PID as well as the plugin watching the child, so either side disappearing releases the operating-system assertion.
 
 Subagents can outlive their parent's turn. A Claude agent can end its turn while a backgrounded subagent or workflow keeps working; Paseo reopens the parent's turn as soon as that subagent streams output, but one that stays quiet (inside a single long tool call, for example) leaves the parent idle meanwhile. Codex sub-agents run on their own threads and never reopen the parent's turn. The plugin therefore also subscribes to the daemon's `agent.provider_subagents.update` feed and holds while any subagent Paseo reports is running.
 
@@ -108,6 +110,8 @@ Settings are host-scoped and stored at version 2. Existing version 1 values migr
 - The plugin prevents sleep; it cannot wake a machine that is already asleep.
 - Holds are host-wide. There are no per-workspace or per-provider filters.
 - Linux hosts without systemd need a custom command.
+- At the GDM login screen, with nobody signed in, GNOME's auto-suspend runs as a different user and can't be held. If the host must stay up there, set GDM's `sleep-inactive-ac-type` to `'nothing'`.
+- XFCE and Cinnamon auto-suspend isn't held yet; both ignore the logind idle lock.
 - Reload recovery depends on the plugin process being able to run the Paseo CLI until an SDK handle becomes available.
 - Background shell commands (such as Claude's `run_in_background`) are not reported to plugins. If an agent ends its turn while only such a command is running, the hold is released after the grace period.
 - Schedules and heartbeats are not visible either; use **Always** if you rely on one to run unattended.
