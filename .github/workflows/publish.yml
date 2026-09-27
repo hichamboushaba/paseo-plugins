@@ -59,4 +59,5 @@ jobs:
         working-directory: ${{ steps.tag.outputs.plugin }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --provenance
+        # A new package's first publish with provenance must state its access explicitly.
+        run: npm publish --provenance --access public
