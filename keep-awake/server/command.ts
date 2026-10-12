@@ -19,6 +19,9 @@ export type SuppressionResolution =
 
 const WHY = "A Paseo agent is working";
 const WHO = "paseo-keep-awake";
+const GNOME_BUS_NAME = "org.gnome.SessionManager";
+const GNOME_WAIT_TIMEOUT_SECONDS = 300;
+const GNOME_RETRY_SECONDS = 30;
 
 const ES_CONTINUOUS = 0x80000000;
 const ES_SYSTEM_REQUIRED = 0x00000001;
@@ -77,8 +80,8 @@ function customSuppressionCommand(
 
 // Two best-effort locks, each held until the plugin exits. GNOME's power daemon honors only
 // gnome-session inhibitors and ignores logind locks, while logind's idle lock is what logind's own
-// IdleAction and KDE honor, and the only one an ordinary user can take headless. Either may be
-// unavailable; the hold lasts while at least one of them runs.
+// IdleAction and KDE honor, and the only one an ordinary user can reliably take headless. A daemon
+// may start before GNOME owns its session-bus name, so wait for that name before taking its lock.
 function linuxScript(watchPid: number): string {
   const untilPluginExits = `tail --pid=${watchPid} -f /dev/null`;
   return [
@@ -86,7 +89,18 @@ function linuxScript(watchPid: number): string {
     `: "\${DBUS_SESSION_BUS_ADDRESS:=unix:path=/run/user/$(id -u)/bus}"`,
     "export DBUS_SESSION_BUS_ADDRESS",
     `systemd-inhibit --what=idle --who=${shellQuote(WHO)} --why=${shellQuote(WHY)} --mode=block ${untilPluginExits} &`,
-    `gnome-session-inhibit --inhibit suspend --app-id ${shellQuote(WHO)} --reason ${shellQuote(WHY)} ${untilPluginExits} &`,
+    "if command -v gnome-session-inhibit >/dev/null 2>&1; then",
+    `  while kill -0 ${watchPid} 2>/dev/null; do`,
+    // The timeout periodically re-checks the plugin pid if GNOME never appears. If gdbus or its
+    // wait subcommand is unavailable, the failed command falls through and the sleep below paces
+    // attempts. No `set -e` or `||` fallback is intentional.
+    `    gdbus wait --session --timeout=${GNOME_WAIT_TIMEOUT_SECONDS} ${shellQuote(GNOME_BUS_NAME)}`,
+    `    kill -0 ${watchPid} 2>/dev/null || break`,
+    `    gnome-session-inhibit --inhibit suspend --app-id ${shellQuote(WHO)} --reason ${shellQuote(WHY)} ${untilPluginExits}`,
+    // Once the bus name is owned, wait before re-arming if the inhibitor keeps failing or exits.
+    `    sleep ${GNOME_RETRY_SECONDS}`,
+    "  done &",
+    "fi",
     "wait",
   ].join("\n");
 }

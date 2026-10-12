@@ -61,7 +61,11 @@ The screen shows the daemon platform, whether a hold is active, how many agents 
 | Linux | `systemd-inhibit --what=idle --mode=block`, plus `gnome-session-inhibit --inhibit suspend` in a GNOME session | Not supported | Fedora 44 (GNOME 50), Paseo 0.9.1 |
 | Windows | PowerShell `SetThreadExecutionState` | Supported with `ES_DISPLAY_REQUIRED` | Argument-level tests only |
 
-Linux requires systemd. Its idle lock is what logind's own idle suspend and KDE honor, but GNOME's auto-suspend ignores it, so in a GNOME session the plugin also takes a gnome-session inhibitor. Either lock may be unavailable; the hold lasts while at least one is held. If neither can be taken, for example on a host without systemd and outside GNOME, the hold ends at once and the settings screen reports that `sh` exited on its own. An unsupported platform still loads the plugin and tracks turns, but it does not spawn a hold unless you provide a custom command.
+Linux requires systemd. Its idle lock is what logind's own idle suspend and KDE honor, but GNOME's auto-suspend ignores it, so the plugin also tries to take a gnome-session inhibitor. If the GNOME tool is installed, the plugin uses `gdbus wait` to listen for `org.gnome.SessionManager` before taking that inhibitor. This lets a later graphical login acquire its inhibitor without reloading the plugin, while GNOME-less hosts skip the watcher and continue using only the logind lock. The D-Bus wait times out about every five minutes to re-check that the plugin process still exists. If no working `gdbus wait` is available, or an inhibitor attempt ends while the name is owned, attempts fall back to an approximately 30-second cadence.
+
+The built-in logind lock deliberately remains `--what=idle`, not `--what=idle:sleep`. An ordinary user can reliably take the idle lock in headless and non-local contexts, while a sleep lock can require a local session or a polkit rule. Requesting both scopes together would risk losing the portable idle protection when authorization for `sleep` is denied. An unsupported platform still loads the plugin and tracks turns, but it does not spawn a hold unless you provide a custom command.
+
+Limitation: if the GNOME session manager disappears while `gnome-session-inhibit` is holding its lock, the plugin cannot replace that inhibitor until the tool exits. The logind idle lock remains active meanwhile, and the next tool exit returns to the D-Bus wait so a new session manager can be detected and inhibited.
 
 ## Custom command
 
