@@ -1,5 +1,6 @@
 {
   "id": "keep-awake",
   "description": "Keeps the daemon host awake while Paseo agents and their subagents are working.",
-  "requirements": { "paseo": ">=0.9.0-beta.2" }
+  "media": ["images/workspace-menu.png", "images/settings.png"],
+  "requirements": { "paseo": ">=0.11.0" }
 }

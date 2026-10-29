@@ -154,6 +154,7 @@ function createFakeContext() {
     registerSettings: () => settings as never,
     handle,
     registerProvider: () => {},
+    registerUsageSource: () => {},
     on,
     before: () => () => {},
   };
