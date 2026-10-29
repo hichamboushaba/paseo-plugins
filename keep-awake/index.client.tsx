@@ -1,5 +1,5 @@
 import type { PluginClientContext } from "@getpaseo/plugin/client";
-import { HeaderButtons } from "./client/header-buttons.js";
+import { createHeaderButtons } from "./client/header-buttons.js";
 import { KeepAwakeIcon } from "./client/keep-awake-icon.js";
 import { collectAllPages } from "./client/list-all.js";
 import { KeepAwakeModePopover } from "./client/mode-popover.js";
@@ -45,7 +45,7 @@ export default function contribute(client: PluginClientContext) {
     });
   }
 
-  const buttons = new HeaderButtons({
+  const buttons = createHeaderButtons({
     add: (workspaceId) =>
       client.addHeaderButton({
         id: "keep-awake",

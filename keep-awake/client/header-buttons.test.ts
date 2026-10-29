@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { HeaderButtons } from "./header-buttons.js";
+import { createHeaderButtons } from "./header-buttons.js";
 
 function harness() {
   const added: string[] = [];
   const removed: string[] = [];
-  const buttons = new HeaderButtons({
+  const buttons = createHeaderButtons({
     add(workspaceId: string) {
       added.push(workspaceId);
       return {

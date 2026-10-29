@@ -4,34 +4,39 @@ interface HeaderButtonHost {
   add(workspaceId: string): PluginButtonRegistration;
 }
 
-export class HeaderButtons {
-  private readonly registrations = new Map<string, PluginButtonRegistration>();
+// A closure, not a class: the mobile app's Hermes engine can't compile class syntax in plugin bundles.
+export function createHeaderButtons(host: HeaderButtonHost): {
+  reconcile(workspaceIds: Iterable<string>): void;
+  clear(): void;
+  readonly size: number;
+} {
+  const registrations = new Map<string, PluginButtonRegistration>();
 
-  constructor(private readonly host: HeaderButtonHost) {}
+  return {
+    reconcile(workspaceIds: Iterable<string>): void {
+      const wanted = new Set(workspaceIds);
+      for (const [workspaceId, registration] of [...registrations]) {
+        if (!wanted.has(workspaceId)) {
+          registration.remove();
+          registrations.delete(workspaceId);
+        }
+      }
+      for (const workspaceId of wanted) {
+        if (!registrations.has(workspaceId)) {
+          registrations.set(workspaceId, host.add(workspaceId));
+        }
+      }
+    },
 
-  reconcile(workspaceIds: Iterable<string>): void {
-    const wanted = new Set(workspaceIds);
-    for (const [workspaceId, registration] of [...this.registrations]) {
-      if (!wanted.has(workspaceId)) {
+    clear(): void {
+      for (const registration of registrations.values()) {
         registration.remove();
-        this.registrations.delete(workspaceId);
       }
-    }
-    for (const workspaceId of wanted) {
-      if (!this.registrations.has(workspaceId)) {
-        this.registrations.set(workspaceId, this.host.add(workspaceId));
-      }
-    }
-  }
+      registrations.clear();
+    },
 
-  clear(): void {
-    for (const registration of this.registrations.values()) {
-      registration.remove();
-    }
-    this.registrations.clear();
-  }
-
-  get size(): number {
-    return this.registrations.size;
-  }
+    get size(): number {
+      return registrations.size;
+    },
+  };
 }

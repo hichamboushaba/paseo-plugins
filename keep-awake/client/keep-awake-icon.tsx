@@ -12,9 +12,10 @@ export function KeepAwakeIcon({ size, color }: PluginButtonIconProps) {
   // useSettings is a replica query (staleTime: Infinity, refetchOnMount: false),
   // so a settings change pushed while no icon is mounted is invalidated but never
   // refetched, and a remounted icon would serve it stale forever. This icon does
-  // unmount: HeaderButtons tears its button down whenever the workspace list
-  // changes. Re-read once per mount to catch whatever was missed. The empty deps
-  // are deliberate -- reload's identity changes with every query result.
+  // unmount, for example when createHeaderButtons removes the button of a
+  // workspace that left the list. Re-read once per mount to catch whatever was
+  // missed. The empty deps are deliberate -- reload's identity changes with every
+  // query result.
   useEffect(() => {
     void reload().catch(() => undefined);
   }, []);
