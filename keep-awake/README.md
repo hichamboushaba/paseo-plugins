@@ -4,7 +4,7 @@ Keeps the Paseo daemon host awake while agents and their subagents work, then re
 
 See the [changelog](https://github.com/hichamboushaba/paseo-plugins/blob/main/keep-awake/CHANGELOG.md) for release notes.
 
-Requires Paseo `>=0.9.0-beta.2`.
+Requires Paseo `>=0.11.0`.
 
 ## Install
 

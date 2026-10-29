@@ -4,6 +4,11 @@ Versions match the npm package and the `keep-awake/v<version>` tags.
 
 ## Unreleased
 
+### Changed
+
+- Requires Paseo 0.11.0 or later, up from 0.9.0-beta.2. The plugin now lists its screenshots for
+  Paseo's plugin registry, and older Paseo versions reject that manifest field.
+
 ## 0.1.4 - 2026-10-29
 
 ### Fixed
