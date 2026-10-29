@@ -2,6 +2,8 @@
 
 Keeps the Paseo daemon host awake while agents and their subagents work, then releases the hold a minute after the last one finishes. It can also hold continuously, stay completely off, and keep the display awake on supported platforms.
 
+See the [changelog](https://github.com/hichamboushaba/paseo-plugins/blob/main/keep-awake/CHANGELOG.md) for release notes.
+
 Requires Paseo `>=0.9.0-beta.2`.
 
 ## Install
@@ -135,7 +137,9 @@ Both checks must pass before installing or reloading the plugin.
 
 ### Releasing
 
-Bump `version` in `package.json`, commit, and push `main`. Then push a tag that matches the new version:
+Bump `version` in `package.json` and move the `Unreleased` entries in `CHANGELOG.md` under a
+heading for the new version and date in the same commit. Push `main`, then push a tag that matches
+the new version:
 
 ```bash
 git tag keep-awake/v0.1.2

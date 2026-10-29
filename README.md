@@ -28,7 +28,8 @@ npm run typecheck && npm test
 
 ## Releasing a plugin
 
-Each plugin is published to npm on its own. Bump the plugin's `package.json` version, push
-`main`, then push a `<plugin>/v<version>` tag, for example `keep-awake/v0.1.2`. The tag triggers
-[`.github/workflows/publish.yml`](.github/workflows/publish.yml), which verifies the tag against
-`package.json`, runs the plugin's checks, and publishes it with npm provenance.
+Each plugin is published to npm on its own. Bump the plugin's `package.json` version and move the
+`Unreleased` entries in its `CHANGELOG.md` under a heading for the new version and date in the same
+commit. Then push `main` and a `<plugin>/v<version>` tag, for example `keep-awake/v0.1.2`. The tag
+triggers [`.github/workflows/publish.yml`](.github/workflows/publish.yml), which verifies the tag
+against `package.json`, runs the plugin's checks, and publishes it with npm provenance.
