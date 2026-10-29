@@ -33,3 +33,6 @@ Each plugin is published to npm on its own. Bump the plugin's `package.json` ver
 commit. Then push `main` and a `<plugin>/v<version>` tag, for example `keep-awake/v0.1.2`. The tag
 triggers [`.github/workflows/publish.yml`](.github/workflows/publish.yml), which verifies the tag
 against `package.json`, runs the plugin's checks, and publishes it with npm provenance.
+Whenever a change affects what a plugin does, how it is set up, or its limits, update its
+`OVERVIEW.md` in the same change; Paseo's plugin registry displays that file as the plugin's page
+and picks it up with the next npm release.

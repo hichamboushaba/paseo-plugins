@@ -148,6 +148,10 @@ git push origin keep-awake/v0.1.2
 
 The tag starts the repository's publish workflow, which checks the tag against `package.json`, runs the checks above, and publishes the package to npm.
 
+Whenever a change affects what the plugin does, how it is set up, or its limits, update
+`OVERVIEW.md` in the same change; Paseo's plugin registry displays that file as the plugin's page
+and picks it up with the next npm release.
+
 ## License
 
 MIT

@@ -29,7 +29,8 @@
     "!**/*.test.ts",
     "LICENSE",
     "README.md",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "OVERVIEW.md"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
