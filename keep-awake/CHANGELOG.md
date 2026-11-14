@@ -9,6 +9,12 @@ Versions match the npm package and the `keep-awake/v<version>` tags.
 - Requires Paseo 0.11.0 or later, up from 0.9.0-beta.2. The plugin now lists its screenshots for
   Paseo's plugin registry, and older Paseo versions reject that manifest field.
 
+### Fixed
+
+- On Windows, the post-reload agent listing no longer fails with `spawn EINVAL`. Node's `execFile`
+  cannot spawn the `.cmd` shim that npm puts on PATH, so the fallback now runs it through
+  `cmd.exe` with quoted, verbatim arguments and rejects shell metacharacters.
+
 ## 0.1.4 - 2026-10-29
 
 ### Fixed
