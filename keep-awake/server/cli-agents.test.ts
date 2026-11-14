@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseRunningAgentIds, resolveCliCommand } from "./cli-agents.js";
+import { parseRunningAgentIds, resolveCliCommand, buildCliInvocation } from "./cli-agents.js";
 
 test("resolveCliCommand prefers PASEO_CLI and passes PASEO_HOME through", () => {
   const { command, args } = resolveCliCommand({ PASEO_CLI: "/opt/paseo", PASEO_HOME: "/h" });
@@ -49,4 +49,60 @@ test("parseRunningAgentIds returns null for invalid JSON", () => {
 
 test("parseRunningAgentIds returns null when the payload is not an array", () => {
   assert.equal(parseRunningAgentIds(JSON.stringify({ agents: [] })), null);
+});
+
+test("buildCliInvocation wraps a bare PATH command in cmd.exe on win32", () => {
+  const invocation = buildCliInvocation("paseo", ["agent", "ls", "-g", "--json"], "win32", "C:\\Windows\\system32\\cmd.exe");
+  assert.equal(invocation.command, "C:\\Windows\\system32\\cmd.exe");
+  assert.deepEqual(invocation.args, [
+    "/d",
+    "/v:off",
+    "/s",
+    "/c",
+    '""paseo" "agent" "ls" "-g" "--json""',
+  ]);
+  assert.equal(invocation.windowsVerbatimArguments, true);
+});
+
+test("buildCliInvocation wraps an explicit .cmd shim in cmd.exe on win32", () => {
+  const invocation = buildCliInvocation(
+    "C:\\Users\\me\\AppData\\Roaming\\npm\\paseo.cmd",
+    ["agent", "ls", "-g", "--json"],
+    "win32",
+    "",
+  );
+  assert.equal(invocation.command, "cmd.exe");
+  assert.match(invocation.args[4], /^""C:\\Users\\me\\AppData\\Roaming\\npm\\paseo\.cmd" "agent" "ls" "-g" "--json""$/);
+  assert.equal(invocation.windowsVerbatimArguments, true);
+});
+
+test("buildCliInvocation spawns a .exe directly on win32", () => {
+  const invocation = buildCliInvocation("C:\\Program Files\\paseo.exe", ["agent"], "win32");
+  assert.equal(invocation.command, "C:\\Program Files\\paseo.exe");
+  assert.deepEqual(invocation.args, ["agent"]);
+  assert.equal(invocation.windowsVerbatimArguments, false);
+});
+
+test("buildCliInvocation keeps non-Windows invocations direct", () => {
+  const invocation = buildCliInvocation("paseo", ["agent", "ls"], "linux");
+  assert.equal(invocation.command, "paseo");
+  assert.deepEqual(invocation.args, ["agent", "ls"]);
+  assert.equal(invocation.windowsVerbatimArguments, false);
+});
+
+test("buildCliInvocation falls back to cmd.exe when ComSpec is empty on win32", () => {
+  const invocation = buildCliInvocation("paseo", [], "win32", "");
+  assert.equal(invocation.command, "cmd.exe");
+});
+
+test("buildCliInvocation rejects shell metacharacters in a win32 shim invocation", () => {
+  assert.throws(() => buildCliInvocation('C:\\evil"paseo.cmd', [], "win32"), /Unsafe character/);
+  assert.throws(() => buildCliInvocation("paseo", ["--home", "C:\\evil%PATH%"], "win32"), /Unsafe character/);
+  assert.throws(() => buildCliInvocation("paseo", ["a\rb"], "win32"), /Unsafe character/);
+});
+
+test("buildCliInvocation allows metacharacters in direct non-Windows invocations", () => {
+  const invocation = buildCliInvocation('/opt/paseo"weird', ['--home', '/h%x'], "linux");
+  assert.equal(invocation.command, '/opt/paseo"weird');
+  assert.deepEqual(invocation.args, ["--home", "/h%x"]);
 });
